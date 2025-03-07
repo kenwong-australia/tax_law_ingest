@@ -470,7 +470,20 @@ def main():
             docx_filename = docx_path.name
             
             try:
+                # Open the document
                 doc = docx.Document(str(docx_path))
+                
+                # Extract legislation title from filename or first line
+                legislation_title = os.path.basename(docx_path).split('.')[0]
+                # Try to get a better title from the first few paragraphs
+                for i in range(min(5, len(doc.paragraphs))):
+                    if doc.paragraphs[i].text and len(doc.paragraphs[i].text.strip()) > 10:
+                        legislation_title = doc.paragraphs[i].text.strip()
+                        break
+                
+                logging.info(f"Processing file: {docx_filename}")
+                logging.info(f"Legislation title: {legislation_title}")
+                
                 toc_entries = clean_and_parse_toc_from_doc(doc)
                 toc_total = len(toc_entries)
                 print(f"Extracted {toc_total} TOC entries")
@@ -605,7 +618,7 @@ def main():
                 
                 # Write a CSV with all chunks
                 csv_filename = f"{doc_prefix}_{docx_name}_{dt_string}.csv"
-                csv_output_file = os.path.join(LOCAL_DIR, csv_filename)  # Save to LOCAL_DIR instead of json_dir
+                csv_output_file = os.path.join(json_dir, csv_filename)
                 write_chunks_to_csv(chunks, csv_output_file)
                 print(f"All chunks saved in CSV format to {csv_output_file}")
                 
@@ -617,8 +630,8 @@ def main():
                 minutes, seconds = divmod(rem, 60)
 
                 summary_filename = f"{docx_name}_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(LOCAL_DIR, summary_filename)
-                write_individual_summary_log(summary_log_path, docx_filename, toc_total, match_counter, chunks_count, elapsed)
+                summary_log_path = os.path.join(json_dir, summary_filename)
+                write_individual_summary_log(summary_log_path, docx_filename, len(toc_entries), match_counter, chunks_count, elapsed)
 
                 # Update the console output with both file time and overall time
                 print(f"Completed processing {docx_filename} in {int(hours)}h {int(minutes)}m {int(seconds)}s")
