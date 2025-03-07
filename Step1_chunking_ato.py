@@ -176,6 +176,14 @@ def write_individual_summary_log(log_file, filename, input_size, processing_time
             f.write(f"Error: {error_message}\n")
         f.write(f"Time taken: {int(hours)}h {int(minutes)}m {int(seconds)}s\n")
 
+def sanitize_filename(filename):
+    """Replace characters that are invalid in filenames with underscores."""
+    # Replace slashes, colons, and other problematic characters
+    invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+    for char in invalid_chars:
+        filename = filename.replace(char, '_')
+    return filename
+
 def main():
     # Track overall start time
     overall_start_time = time.time()
@@ -327,17 +335,20 @@ def main():
             
             # Create output JSON structure
             output_data = {
-                "doc_id": extracted_doc_id,
-                "chunk_text": processed_chunk,
-                "date_info": extracted_date_info,
                 "title": extracted_title,
                 "url": extracted_url,
-                "document_type": "ato_ruling",  # Adding document type for namespace determination
-                "processing_date": datetime.datetime.now().isoformat()
+                "text": processed_chunk,
+                "metadata": {
+                    "doc_id": extracted_doc_id,
+                    "date_info": extracted_date_info,
+                    "document_type": "ato_ruling",
+                    "source_file": file_name,
+                    "creation_date": datetime.datetime.now().isoformat()
+                }
             }
             
             # Save processed JSON
-            output_filename = f"ATO_{extracted_doc_id}.json"
+            output_filename = f"ATO_{sanitize_filename(extracted_doc_id)}.json"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
             try:
                 with open(output_path, "w", encoding="utf-8") as outf:
