@@ -6,7 +6,10 @@ import logging
 import datetime
 import time
 import tiktoken
+import re
+import sys
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -23,12 +26,30 @@ VECTOR_DIMENSION = 3072  # Embedding dimension for "text-embedding-3-large"
 # Directory containing JSON files for either legislation or ATO rulings
 LOCAL_JSON_DIR = os.getenv("LOCAL_JSON_DIR", "/Users/kenmacpro/pinecone-upsert/testfiles_law/json")
 
-# Log file with timestamp
-timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE_NAME = f"log_pinecone_legislation_{timestamp_str}.txt"
+# Create local log directory
+LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
 
-# Set up basic logging to console
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging with timestamp
+timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+LOG_FILE_NAME = os.path.join(LOG_DIR, f"log_pinecone_law_{timestamp_str}.txt")
+
+# Log the current working directory
+print(f"Current working directory: {os.getcwd()}")
+print(f"Log files will be saved to: {LOG_DIR}")
+
+# Configure logging to both file and console
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE_NAME),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Global debug flag.
+DEBUG = True
 
 # Define the number of retries and delay between them
 MAX_RETRIES = 3
@@ -80,6 +101,19 @@ def get_embedding(text: str, model="text-embedding-3-large") -> list:
 def main():
     # Track overall start time
     overall_start_time = time.time()
+    
+    # Print welcome banner
+    print("\n" + "=" * 80)
+    print(" " * 30 + "LAW DOCUMENT PINECONE INDEXING")
+    print("=" * 80 + "\n")
+    
+    logging.info("Starting the law document Pinecone indexing.")
+    
+    # Directory containing the JSON files and checkpoint file
+    checkpoint_path = os.path.join(LOG_DIR, "pinecone_law_checkpoint.txt")  # Store checkpoint in log directory
+    processed_files = []  # Track successfully processed files
+    failed_files = []     # Track failed files
+    time_per_file = {}    # Track processing time for each file
 
     # Initialize Pinecone index
     index = init_pinecone(pinecone_api_key, pinecone_env, index_name)
@@ -89,12 +123,6 @@ def main():
     json_files = [f for f in os.listdir(LOCAL_JSON_DIR) if f.lower().endswith('.json')]
     total_files = len(json_files)
     logging.info(f"Found {total_files} JSON file(s) to process.")
-
-    # Track files
-    upserted_files = []
-    failed_files = []
-    time_per_file = {}
-    truncated_files = {}  # Add this to track truncated files
 
     for i, file_name in enumerate(json_files, start=1):
         file_path = os.path.join(LOCAL_JSON_DIR, file_name)
@@ -146,7 +174,6 @@ def main():
                 # Track if truncation happened
                 original_token_count = len(tiktoken.encoding_for_model("text-embedding-3-large").encode(embedding_input))
                 if original_token_count > token_count:
-                    truncated_files[file_name] = (original_token_count, token_count)
                     logging.warning(f"Truncated {file_name} from {original_token_count} to {token_count} tokens")
                 
                 # Add retry logic specific to embedding
@@ -172,7 +199,7 @@ def main():
                 logging.error(f"Failed to get embedding for {file_name}: {str(e)}")
                 import traceback
                 logging.error(traceback.format_exc())
-                failed_files.append(file_name)
+                failed_files.append((file_name, str(e)))
                 continue  # Skip to next file
 
             # Build metadata
@@ -225,7 +252,7 @@ def main():
                         raise  # Raise the exception if the last attempt fails
 
             # Track success
-            upserted_files.append(file_name)
+            processed_files.append(file_name)
             elapsed_time = time.time() - overall_start_time
             time_per_file[file_name] = round(time.time() - start_time, 2)
 
@@ -234,9 +261,30 @@ def main():
             minutes, seconds = divmod(rem, 60)
             logging.info(f"Progress: {i}/{total_files} files upserted. Time elapsed: {int(hours)}h {int(minutes)}m {int(seconds)}s.")
 
+            # Create individual summary log
+            dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            summary_filename = f"{file_name}_pinecone_summary_{dt_string}.txt"
+            summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
+            write_individual_summary_log(summary_log_path, file_name, os.path.getsize(file_path), elapsed_time)
+
         except Exception as e:
-            logging.error(f"Failed processing {file_name}: {e}")
-            failed_files.append(file_name)
+            error_msg = f"Error processing file {file_name}: {e}"
+            logging.error(error_msg)
+            failed_files.append((file_name, error_msg))
+            
+            # Create summary log for failed file
+            dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            summary_filename = f"{file_name}_pinecone_error_summary_{dt_string}.txt"
+            summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
+            file_duration = time.time() - start_time
+            write_individual_summary_log(summary_log_path, file_name, os.path.getsize(file_path), file_duration, False, error_msg)
+            
+        # Update checkpoint file after processing each file (successful or not)
+        try:
+            with open(checkpoint_path, "w") as cp:
+                cp.write(str(i))
+        except Exception as e:
+            logging.error(f"Error writing to checkpoint file: {e}")
 
     # Track overall end time
     overall_end_time = time.time()
@@ -246,45 +294,29 @@ def main():
     total_hours, total_rem = divmod(total_execution_time, 3600)
     total_minutes, total_seconds = divmod(total_rem, 60)
 
-    # -----------------------------
-    # Generate Log File
-    # -----------------------------
-    successful_count = len(upserted_files)
-    failed_count = len(failed_files)
+    # Generate summary report
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_filename = f"pinecone_law_report_{timestamp}.txt"
+    report_path = os.path.join(LOG_DIR, report_filename)  # Save in log directory
+    with open(report_path, "w", encoding="utf-8") as report_file:
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        report_file.write(f"Law Pinecone Indexing Report - Generated on {current_time}\n")
+        report_file.write(f"Total .json files processed: {total_files}\n")
+        report_file.write(f"Successfully upserted: {len(processed_files)}\n")
+        report_file.write(f"Failed to upsert: {len(failed_files)}\n")
+        report_file.write(f"All files upserted? {'YES' if len(processed_files) == total_files else 'NO'}\n")
+        report_file.write(f"Total execution time: {int(total_hours)}h {int(total_minutes)}m {int(total_seconds)}s\n\n")
 
-    with open(LOG_FILE_NAME, "w", encoding="utf-8") as log_f:
-        log_f.write("Summary of Pinecone Upserts\n")
-        log_f.write("===========================\n")
-        log_f.write(f"Timestamp: {datetime.datetime.now()}\n\n")
-        log_f.write(f"Total .json files processed: {total_files}\n")
-        log_f.write(f"Successfully upserted: {successful_count}\n")
-        log_f.write(f"Failed to upsert: {failed_count}\n")
-        log_f.write(f"All files upserted? {'YES' if successful_count == total_files else 'NO'}\n")
-        log_f.write(f"Total execution time: {int(total_hours)}h {int(total_minutes)}m {int(total_seconds)}s\n\n")
-
-        log_f.write("Time taken per file:\n")
+        report_file.write("Time taken per file:\n")
         for fname, duration in time_per_file.items():
-            log_f.write(f"  - {fname}: {duration:.2f} sec\n")
+            report_file.write(f"  - {fname}: {duration:.2f} sec\n")
 
-        log_f.write("\nList of upserted files:\n")
-        for fname in upserted_files:
-            log_f.write(f"  - {fname}\n")
+        if failed_files:
+            report_file.write("\nList of failed files:\n")
+            for fname, error in failed_files:
+                report_file.write(f"  - {fname}: {error}\n")
 
-        if failed_count > 0:
-            log_f.write("\nList of failed files:\n")
-            for fname in failed_files:
-                log_f.write(f"  - {fname}\n")
-
-        # Add truncation summary
-        if truncated_files:
-            log_f.write("\nFiles that required truncation:\n")
-            for fname, (orig_tokens, trunc_tokens) in truncated_files.items():
-                reduction_pct = ((orig_tokens - trunc_tokens) / orig_tokens) * 100
-                log_f.write(f"  - {fname}: {orig_tokens} → {trunc_tokens} tokens ({reduction_pct:.1f}% reduction)\n")
-
-    logging.info(f"\nUpsert process complete.")
-    logging.info(f"Total execution time: {int(total_hours)}h {int(total_minutes)}m {int(total_seconds)}s")
-    logging.info(f"Log file written to: {LOG_FILE_NAME}")
+    print(f"Pinecone indexing completed. Report generated and saved as '{report_path}'.")
 
 
 def truncate_to_token_limit(text, max_tokens=8000, model="text-embedding-3-large"):
@@ -321,6 +353,19 @@ def determine_namespace(file_name, metadata):
         
     # Default to no namespace (for legislation)
     return None
+
+
+def write_individual_summary_log(filename, file_name, file_size, duration, success=True, error_msg=None):
+    with open(filename, "w", encoding="utf-8") as log_f:
+        log_f.write("Summary of Pinecone Upsert\n")
+        log_f.write("===========================\n")
+        log_f.write(f"Timestamp: {datetime.datetime.now()}\n\n")
+        log_f.write(f"File name: {file_name}\n")
+        log_f.write(f"File size: {file_size} bytes\n")
+        log_f.write(f"Success: {'YES' if success else 'NO'}\n")
+        log_f.write(f"Duration: {duration:.2f} seconds\n")
+        if not success:
+            log_f.write(f"Error: {error_msg}\n")
 
 
 if __name__ == "__main__":

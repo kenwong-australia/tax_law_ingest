@@ -29,9 +29,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- CONFIGURATION ---
+# Create local log directory
+LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
 # Set up logging with timestamp
 timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE_NAME = f"log_chunking_ato_{timestamp_str}.txt"
+LOG_FILE_NAME = os.path.join(LOG_DIR, f"log_chunking_ato_{timestamp_str}.txt")
+
+# Log the current working directory
+print(f"Current working directory: {os.getcwd()}")
+print(f"Log files will be saved to: {LOG_DIR}")
 
 # Configure logging to both file and console
 logging.basicConfig(
@@ -196,7 +204,7 @@ def main():
     logging.info("Starting the ATO document chunking pipeline.")
     
     # Directory containing the JSON files and checkpoint file
-    checkpoint_path = "chunking_checkpoint.txt"  # Stored in the current working directory
+    checkpoint_path = os.path.join(LOG_DIR, "chunking_checkpoint.txt")  # Store checkpoint in log directory
     processed_files = []  # Track successfully processed files
     failed_files = []     # Track failed files
     time_per_file = {}    # Track processing time for each file
@@ -269,7 +277,7 @@ def main():
                 # Create summary log for failed file
                 dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                 summary_filename = f"{file_name}_error_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(INPUT_DIR, summary_filename)
+                summary_log_path = os.path.join(LOG_DIR, summary_filename)
                 file_duration = time.time() - file_start_time
                 write_individual_summary_log(summary_log_path, file_name, file_size, file_duration, False, error_msg)
                 
@@ -306,7 +314,7 @@ def main():
                 # Create summary log for failed file
                 dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                 summary_filename = f"{file_name}_error_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(INPUT_DIR, summary_filename)
+                summary_log_path = os.path.join(LOG_DIR, summary_filename)
                 file_duration = time.time() - file_start_time
                 write_individual_summary_log(summary_log_path, file_name, file_size, file_duration, False, error_msg)
                 
@@ -369,7 +377,7 @@ def main():
                 # Create individual summary log
                 dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                 summary_filename = f"{file_name}_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(INPUT_DIR, summary_filename)
+                summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
                 write_individual_summary_log(summary_log_path, file_name, file_size, file_duration)
                 
             except Exception as e:
@@ -380,7 +388,7 @@ def main():
                 # Create summary log for failed file
                 dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                 summary_filename = f"{file_name}_error_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(INPUT_DIR, summary_filename)
+                summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
                 file_duration = time.time() - file_start_time
                 write_individual_summary_log(summary_log_path, file_name, file_size, file_duration, False, error_msg)
             
@@ -430,7 +438,8 @@ def main():
     # Generate summary report
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     report_filename = f"ato_chunking_report_{timestamp}.txt"
-    with open(report_filename, "w", encoding="utf-8") as report_file:
+    report_path = os.path.join(LOG_DIR, report_filename)  # Save in log directory
+    with open(report_path, "w", encoding="utf-8") as report_file:
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         report_file.write(f"ATO Chunking Report - Generated on {current_time}\n")
         report_file.write("=" * 50 + "\n\n")
@@ -465,7 +474,7 @@ def main():
         else:
             report_file.write("All files processed successfully.\n")
             
-    print(f"Chunking completed. Report generated and saved as '{report_filename}'.")
+    print(f"Chunking completed. Report generated and saved as '{report_path}'.")
 
 if __name__ == "__main__":
     main() 

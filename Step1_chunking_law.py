@@ -21,6 +21,37 @@ from pathlib import Path
 import docx
 from datetime import datetime
 from rapidfuzz import fuzz
+import json
+import openai
+import logging
+import sys
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# --- CONFIGURATION ---
+# Create local log directory
+LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Set up logging with timestamp
+timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+LOG_FILE_NAME = os.path.join(LOG_DIR, f"log_chunking_law_{timestamp_str}.txt")
+
+# Log the current working directory
+print(f"Current working directory: {os.getcwd()}")
+print(f"Log files will be saved to: {LOG_DIR}")
+
+# Configure logging to both file and console
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE_NAME),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 # Global debug flag.
 DEBUG = True
@@ -386,11 +417,35 @@ def main():
     # Track overall start time
     overall_start_time = time.time()
     
-    # Prompt user for the legislation title
-    legislation_title = input("Enter the legislation title to prepend (e.g., 'ITAA 1997'): ").strip()
-    if not legislation_title:
-        legislation_title = "ITAA 1997"
+    # Print welcome banner
+    print("\n" + "=" * 80)
+    print(" " * 30 + "LAW DOCUMENT CHUNKING PIPELINE")
+    print("=" * 80 + "\n")
     
+    logging.info("Starting the law document chunking pipeline.")
+    
+    # Directory containing the JSON files and checkpoint file
+    checkpoint_path = os.path.join(LOG_DIR, "chunking_law_checkpoint.txt")  # Store checkpoint in log directory
+    processed_files = []  # Track successfully processed files
+    failed_files = []     # Track failed files
+    time_per_file = {}    # Track processing time for each file
+    
+    # Ask user if they want to reset the checkpoint
+    reset_checkpoint = input("Do you want to reset the checkpoint? (yes/no): ").strip().lower()
+    if reset_checkpoint == 'yes':
+        start_index = 0
+        logging.info("Checkpoint reset to 0.")
+    else:
+        # Read checkpoint if it exists
+        start_index = 0
+        if os.path.exists(checkpoint_path):
+            try:
+                with open(checkpoint_path, "r") as cp:
+                    start_index = int(cp.read().strip())
+                    logging.info(f"Resuming from checkpoint: file index {start_index}")
+            except Exception as e:
+                logging.error(f"Error reading checkpoint file: {e}")
+
     try:
         docx_files = get_all_docx_files(LOCAL_DIR)
         if not docx_files:
@@ -400,7 +455,7 @@ def main():
         print(f"Found {len(docx_files)} DOCX files to process")
         json_dir = os.path.join(LOCAL_DIR, "json")
         os.makedirs(json_dir, exist_ok=True)
-        overall_dt_string = datetime.now().strftime('%Y%m%d_%H%M%S')
+        overall_dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         
         for docx_index, docx_path in enumerate(docx_files, 1):
             file_start = time.time()  # Start timing for this DOCX file
