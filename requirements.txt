@@ -1,0 +1,16 @@
+   openai
+   numpy
+   pinecone
+   pypandoc
+   pandas
+   python-docx
+   rapidfuzz
+   markdownify
+   fake-useragent
+   bs4
+   tqdm
+   requests
+   fuzzywuzzy
+   selenium
+   tiktoken
+   dotenv
