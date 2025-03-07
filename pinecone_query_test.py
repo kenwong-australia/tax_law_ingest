@@ -30,9 +30,14 @@ def init_pinecone(api_key: str):
         pinecone.create_index(index_name, dimension=VECTOR_DIMENSION)
     return pinecone.Index(index_name)
 
-def query_pinecone(index, query_vector, top_k=10):
+def query_pinecone(index, query_vector, top_k=10, namespace=None):
     """Query the Pinecone index with the provided vector and return matches with metadata."""
-    response = index.query(vector=query_vector, top_k=top_k, include_metadata=True)
+    response = index.query(
+        vector=query_vector, 
+        top_k=top_k, 
+        include_metadata=True,
+        namespace=namespace
+    )
     return response.get("matches", [])
 
 def call_llm_with_context(query: str, context: str) -> str:
@@ -133,7 +138,7 @@ Only include the ones that are truly relevant.
             else:
                 raise
 
-    # Parse GPT’s response for chunk references
+    # Parse GPT's response for chunk references
     used_indices = []
     for i, match in enumerate(matches, start=1):
         doc_id = match.get("metadata", {}).get("doc_id", f"chunk_{i}")
@@ -157,7 +162,7 @@ def main():
     query_vector = get_embedding(user_query)
     
     # Query Pinecone for matching chunks
-    matches = query_pinecone(index, query_vector, top_k=10)
+    matches = query_pinecone(index, query_vector, top_k=10, namespace="ato")
     if not matches:
         print("No matching records found.")
         return

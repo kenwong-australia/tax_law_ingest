@@ -203,6 +203,9 @@ def main():
             # Sanitize the vector ID
             vector_id = vector_id.replace(" ", "_").encode("ascii", "ignore").decode()
 
+            # Determine namespace
+            namespace = determine_namespace(file_name, pinecone_metadata)
+
             # Upsert with retries
             for attempt in range(MAX_RETRIES):
                 try:
@@ -212,7 +215,7 @@ def main():
                             "values": embedding,
                             "metadata": pinecone_metadata
                         }
-                    ])
+                    ], namespace=namespace)
                     break  # Break if successful
                 except Exception as e:
                     logging.error(f"Upsert failed for {file_name} on attempt {attempt + 1}: {e}")
@@ -304,6 +307,20 @@ def truncate_to_token_limit(text, max_tokens=8000, model="text-embedding-3-large
         if len(text) <= char_limit:
             return text, len(text) // 4
         return text[:char_limit], max_tokens
+
+
+def determine_namespace(file_name, metadata):
+    """Determine the namespace based on file name and metadata."""
+    # Check file name for ATO prefix
+    if file_name.startswith("ATO_"):
+        return "ato"
+    
+    # Check document_type field in metadata
+    if metadata.get("document_type") == "ato_ruling":
+        return "ato"
+        
+    # Default to no namespace (for legislation)
+    return None
 
 
 if __name__ == "__main__":

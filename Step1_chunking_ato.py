@@ -5,21 +5,20 @@ import openai
 import datetime
 import logging
 import time
-from pinecone import Pinecone, ServerlessSpec
 from dotenv import load_dotenv
 
 load_dotenv()
-
 
 # Set up logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- CONFIGURATION ---
 openai.api_key = os.getenv("OPENAI_API_KEY")
-pinecone_api_key = os.getenv("PINECONE_API_KEY")
-pinecone_env = os.getenv("PINECONE_ENV")
-index_name = os.getenv("PINECONE_INDEX")
-VECTOR_DIMENSION = 1536  # For the embedding vector
+
+# Directory for input and output files
+INPUT_DIR = "/Users/kenmacpro/pinecone-upsert/testfiles_cgt"  # Directory with raw ATO files
+OUTPUT_DIR = "/Users/kenmacpro/pinecone-upsert/testfiles_law/json"  # Where to save processed JSON
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Updated prompt for a single-chunk process with detailed instructions:
 single_chunk_prompt = """Please process the attached document to extract and summarize the following, while retaining the important text and structure. Do not invent new statements unless it is necessary for clarity or to fulfill the required format.
@@ -52,10 +51,6 @@ def remove_markdown(text: str) -> str:
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\2', text)
     text = re.sub(r'(\*\*|\*|__|_)', '', text)
     return text
-
-def init_pinecone(api_key: str) -> Pinecone:
-    """Initialize Pinecone with the given API key."""
-    return Pinecone(api_key=api_key)
 
 def call_llm(text: str, prompt: str) -> str:
     """
@@ -119,35 +114,11 @@ def parse_metadata(chunk_text: str):
         date_info = "No date info provided"
     return doc_id, title, url, date_info
 
-def get_embedding(text: str, model="text-embedding-ada-002") -> list:
-    """
-    Obtain an embedding vector for the given text using OpenAI's Embeddings API.
-    """
-    response = openai.Embedding.create(input=[text], model=model)
-    return response['data'][0]['embedding']
-
 def main():
-    logging.info("Starting the single-chunk processing pipeline.")
+    logging.info("Starting the ATO document chunking pipeline.")
     
-    # Initialize Pinecone and create index if it doesn't exist
-    try:
-        pc = init_pinecone(pinecone_api_key)
-        if index_name not in pc.list_indexes().names():
-            pc.create_index(
-                name=index_name,
-                dimension=VECTOR_DIMENSION,
-                metric='euclidean',
-                spec=ServerlessSpec(cloud='aws', region='us-east-1')
-            )
-        index = pc.Index(index_name)
-        logging.info("Initialized Pinecone.")
-    except Exception as e:
-        logging.error(f"Error initializing Pinecone: {e}")
-        return
-
     # Directory containing the JSON files and checkpoint file
-    test_files_directory = "/Users/kenmacpro/pinecone-upsert/testfiles_cgt"
-    checkpoint_path = "checkpoint.txt"  # Stored in the current working directory
+    checkpoint_path = "chunking_checkpoint.txt"  # Stored in the current working directory
     failed_files = []  # List to store file names that failed processing
     
     # Ask user if they want to reset the checkpoint
@@ -169,16 +140,16 @@ def main():
     
     try:
         # Sort files alphabetically to ensure a stable processing order
-        files = sorted([f for f in os.listdir(test_files_directory) if f.lower().endswith('.json')])
+        files = sorted([f for f in os.listdir(INPUT_DIR) if f.lower().endswith('.json')])
         if not files:
-            logging.error("No JSON files found in the test files directory.")
+            logging.error("No JSON files found in the input directory.")
             return
 
         # Process up to 30 files starting from the checkpoint
         for file_name in files[start_index : start_index + 30]:
             file_counter += 1
             print(f"Processing file {file_counter}/{start_index + 30}: {file_name}")
-            local_file_path = os.path.join(test_files_directory, file_name)
+            local_file_path = os.path.join(INPUT_DIR, file_name)
             logging.info(f"Processing file: {local_file_path}")
             
             try:
@@ -235,37 +206,26 @@ def main():
             elif not extracted_url.lower().startswith("http"):
                 extracted_url = "https://ato.gov.au" + extracted_url
             
-            try:
-                embedding = get_embedding(processed_chunk)
-                logging.info(f"Successfully obtained embedding for file {file_name}.")
-            except Exception as e:
-                logging.error(f"Error obtaining embedding for file {file_name}: {e}")
-                failed_files.append(file_name)
-                with open(checkpoint_path, "w") as cp:
-                    cp.write(str(file_counter))
-                continue
-            
-            metadata = {
+            # Create output JSON structure
+            output_data = {
                 "doc_id": extracted_doc_id,
                 "chunk_text": processed_chunk,
-                "upsert_date": datetime.datetime.now().isoformat(),
                 "date_info": extracted_date_info,
                 "title": extracted_title,
-                "url": extracted_url
+                "url": extracted_url,
+                "document_type": "ato_ruling",  # Adding document type for namespace determination
+                "processing_date": datetime.datetime.now().isoformat()
             }
             
-            vector = {
-                "id": f"{extracted_doc_id}",
-                "values": embedding,
-                "metadata": metadata
-            }
-            
+            # Save processed JSON
+            output_filename = f"ATO_{extracted_doc_id}.json"
+            output_path = os.path.join(OUTPUT_DIR, output_filename)
             try:
-                upsert_response = index.upsert(vectors=[vector], namespace="ato")
-                logging.info(f"Upserted vector for file {file_name} to Pinecone.")
-                print("Upsert response:", upsert_response)
+                with open(output_path, "w", encoding="utf-8") as outf:
+                    json.dump(output_data, outf, indent=2)
+                logging.info(f"Saved processed file to {output_path}")
             except Exception as e:
-                logging.error(f"Error during upsert for file {file_name}: {e}")
+                logging.error(f"Error saving processed file {output_filename}: {e}")
                 failed_files.append(file_name)
             
             # Update checkpoint file after processing each file (successful or not)
@@ -276,62 +236,26 @@ def main():
                 logging.error(f"Error writing to checkpoint file: {e}")
     
     except Exception as e:
-        logging.error(f"Error accessing the test files directory: {e}")
+        logging.error(f"Error accessing the directory: {e}")
 
-    # --- QUERY & REPORT GENERATION ---
-    metadata_filter = {
-        "$or": [
-            {"source_url": {"$ne": ""}},
-            {"section_url": {"$ne": ""}}
-        ]
-    }
-    dummy_vector = [0.0] * VECTOR_DIMENSION
-    query_response = index.query(
-        vector=dummy_vector,
-        filter=metadata_filter,
-        include_metadata=True,
-        include_values=False,
-        top_k=10000
-    )
-    matches = query_response.get("matches", [])
-    if not matches:
-        print("No matching records found.")
-    else:
-        print(f"Total matches found: {len(matches)}")
-        # Limit reporting to the first 30 matches
-        for match in matches[:30]:
-            metadata = match.get('metadata', {})
-            print(f"Match ID: {match.get('id', 'N/A')}, Document ID: {metadata.get('doc_id', 'N/A')}")
+    # Generate summary report
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_filename = f"ato_chunking_report_{timestamp}.txt"
+    with open(report_filename, "w", encoding="utf-8") as report_file:
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        report_file.write(f"ATO Chunking Report - Generated on {current_time}\n")
+        report_file.write(f"Files Processed: {file_counter - start_index}\n")
+        report_file.write("=" * 50 + "\n\n")
         
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"pinecone_report_ato_{timestamp}.txt"
-        with open(report_filename, "w", encoding="utf-8") as report_file:
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            report_file.write(f"Pinecone Report - Generated on {current_time}\n")
-            report_file.write(f"Total Records: {len(matches)}\n")
-            report_file.write("=" * 50 + "\n\n")
-            for match in matches[:30]:
-                metadata = match.get("metadata", {})
-                report_file.write("--------------------------------------------------\n")
-                report_file.write(f"ID: {match.get('id', 'N/A')}\n")
-                report_file.write(f"Score: {match.get('score', 'N/A')}\n")
-                report_file.write(f"Chunk Text: {metadata.get('chunk_text', 'N/A')}\n")
-                report_file.write("-- Metadata --\n")
-                report_file.write(f"Date Info: {metadata.get('date_info', 'N/A')}\n")
-                report_file.write(f"Document ID: {metadata.get('doc_id', 'N/A')}\n")
-                report_file.write(f"Title: {metadata.get('title', 'N/A')}\n")
-                report_file.write(f"URL: {metadata.get('url', 'N/A')}\n")
-                report_file.write(f"Upsert Date: {metadata.get('upsert_date', 'N/A')}\n")
-                report_file.write("\n")
-            # Append failed files list to the report
-            if failed_files:
-                report_file.write("--------------------------------------------------\n")
-                report_file.write("Failed Files:\n")
-                for failed in failed_files:
-                    report_file.write(f"{failed}\n")
-                report_file.write("\n")
-        print(f"Report generated and saved as '{report_filename}'.")
-    
+        # Report failed files
+        if failed_files:
+            report_file.write("Failed Files:\n")
+            for failed in failed_files:
+                report_file.write(f"{failed}\n")
+        else:
+            report_file.write("All files processed successfully.\n")
+            
+    print(f"Chunking completed. Report generated and saved as '{report_filename}'.")
 
 if __name__ == "__main__":
-    main()
+    main() 
