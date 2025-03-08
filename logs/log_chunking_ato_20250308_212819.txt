@@ -1,0 +1,184 @@
+2025-03-08 21:28:19,426 - INFO - Starting the ATO document chunking pipeline.
+2025-03-08 21:28:23,435 - INFO - Checkpoint reset to 0.
+2025-03-08 21:28:23,438 - INFO - Found 793 JSON files in /Users/kenmacpro/pinecone-upsert/testfiles_cgt
+2025-03-08 21:28:23,438 - INFO - Will process up to 30 files (MAX_FILES_TO_PROCESS=30)
+2025-03-08 21:28:23,438 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2001301_00001.json
+2025-03-08 21:28:23,440 - INFO - Sending document to LLM for processing...
+2025-03-08 21:28:34,669 - INFO - LLM processing completed in 11.23 seconds
+2025-03-08 21:28:34,669 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:28:34,670 - INFO - Extracted metadata: doc_id=ATO ID 2001/301, title=Deductions and expenses: Bad Debt (Loan by beneficiary to trust)
+2025-03-08 21:28:34,670 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2001_301.json
+2025-03-08 21:28:34,671 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2001308_00001.json
+2025-03-08 21:28:34,671 - INFO - Sending document to LLM for processing...
+2025-03-08 21:28:46,232 - INFO - LLM processing completed in 11.56 seconds
+2025-03-08 21:28:46,233 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:28:46,234 - INFO - Extracted metadata: doc_id=ATO ID 2001/308, title=Sale of Company via Share Cancellation
+2025-03-08 21:28:46,236 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2001_308.json
+2025-03-08 21:28:46,237 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2001375_00001.json
+2025-03-08 21:28:46,238 - INFO - Sending document to LLM for processing...
+2025-03-08 21:28:56,137 - INFO - LLM processing completed in 9.90 seconds
+2025-03-08 21:28:56,138 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:28:56,138 - INFO - Extracted metadata: doc_id=ATO ID 2001/375, title=Cost Base: Recoupment of expenses
+2025-03-08 21:28:56,140 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2001_375.json
+2025-03-08 21:28:56,141 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2001799_00001.json
+2025-03-08 21:28:56,141 - INFO - Sending document to LLM for processing...
+2025-03-08 21:29:06,405 - INFO - LLM processing completed in 10.26 seconds
+2025-03-08 21:29:06,406 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:29:06,406 - INFO - Extracted metadata: doc_id=ATO ID 2001/799, title=Capital gains tax: capital losses: rights in relation to non-resident company
+2025-03-08 21:29:06,407 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2001_799.json
+2025-03-08 21:29:06,408 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2001800_00001.json
+2025-03-08 21:29:06,409 - INFO - Sending document to LLM for processing...
+2025-03-08 21:29:14,088 - INFO - LLM processing completed in 7.68 seconds
+2025-03-08 21:29:14,088 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:29:14,089 - INFO - Extracted metadata: doc_id=ATO ID 2001/800, title=Capital gains tax: capital losses: shares in non-resident company
+2025-03-08 21:29:14,091 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2001_800.json
+2025-03-08 21:29:14,092 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002100_00001.json
+2025-03-08 21:29:14,093 - INFO - Sending document to LLM for processing...
+2025-03-08 21:29:24,120 - INFO - LLM processing completed in 10.03 seconds
+2025-03-08 21:29:24,121 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:29:24,122 - INFO - Extracted metadata: doc_id=ATO ID 2002/100, title=Income Tax: Capital Gains tax: Partial scrip for scrip roll-over: ineligible proceeds
+2025-03-08 21:29:24,124 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_100.json
+2025-03-08 21:29:24,125 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID20021069_00001.json
+2025-03-08 21:29:24,126 - INFO - Sending document to LLM for processing...
+2025-03-08 21:29:32,824 - INFO - LLM processing completed in 8.70 seconds
+2025-03-08 21:29:32,825 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:29:32,825 - INFO - Extracted metadata: doc_id=ATO ID 2002/1069, title=Capital Gains Tax - Cost Base - apportionment of costs to sale of blocks 'off the plan' in a previous income year.
+2025-03-08 21:29:32,827 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_1069.json
+2025-03-08 21:29:32,828 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID20021095_00001.json
+2025-03-08 21:29:32,829 - INFO - Sending document to LLM for processing...
+2025-03-08 21:29:44,294 - INFO - LLM processing completed in 11.46 seconds
+2025-03-08 21:29:44,294 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:29:44,295 - INFO - Extracted metadata: doc_id=ATO ID 2002/1095, title=Capital gains tax: incidental costs forming part of the cost base
+2025-03-08 21:29:44,296 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_1095.json
+2025-03-08 21:29:44,297 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002239_00001.json
+2025-03-08 21:29:44,297 - INFO - Sending document to LLM for processing...
+2025-03-08 21:29:55,046 - INFO - LLM processing completed in 10.75 seconds
+2025-03-08 21:29:55,047 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:29:55,047 - INFO - Extracted metadata: doc_id=ATO ID 2002/239, title=Capital gains tax: scrip for scrip roll over: member of wholly owned group of companies
+2025-03-08 21:29:55,048 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_239.json
+2025-03-08 21:29:55,049 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002274_00001.json
+2025-03-08 21:29:55,050 - INFO - Sending document to LLM for processing...
+2025-03-08 21:30:08,406 - INFO - LLM processing completed in 13.36 seconds
+2025-03-08 21:30:08,407 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:30:08,407 - INFO - Extracted metadata: doc_id=ATO ID 2002/274, title=CGT: scrip for scrip roll-over - single arrangement.
+2025-03-08 21:30:08,409 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_274.json
+2025-03-08 21:30:08,410 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002354_00001.json
+2025-03-08 21:30:08,410 - INFO - Sending document to LLM for processing...
+2025-03-08 21:30:17,985 - INFO - LLM processing completed in 9.57 seconds
+2025-03-08 21:30:17,985 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:30:17,986 - INFO - Extracted metadata: doc_id=ATO ID 2002/354, title=Capital Gains Tax - Small Business Rollover Relief - Active Assets - Asset 'held ready for use'.
+2025-03-08 21:30:17,987 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_354.json
+2025-03-08 21:30:17,987 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002494_00001.json
+2025-03-08 21:30:17,988 - INFO - Sending document to LLM for processing...
+2025-03-08 21:30:29,965 - INFO - LLM processing completed in 11.98 seconds
+2025-03-08 21:30:29,966 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:30:29,966 - INFO - Extracted metadata: doc_id=ATO ID 2002/494, title=ATO ID 2002/494 - CGT small business concessions - retirement exemption - making an eligible termination payment years later.
+2025-03-08 21:30:29,968 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_494.json
+2025-03-08 21:30:29,969 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002629_00001.json
+2025-03-08 21:30:29,970 - INFO - Sending document to LLM for processing...
+2025-03-08 21:30:40,104 - INFO - LLM processing completed in 10.13 seconds
+2025-03-08 21:30:40,105 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:30:40,105 - INFO - Extracted metadata: doc_id=ATO ID 2002/629, title=ATO ID 2002/629 - CGT - small business concessions - active asset - just before the CGT event
+2025-03-08 21:30:40,106 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_629.json
+2025-03-08 21:30:40,107 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002633_00001.json
+2025-03-08 21:30:40,108 - INFO - Sending document to LLM for processing...
+2025-03-08 21:30:52,513 - INFO - LLM processing completed in 12.41 seconds
+2025-03-08 21:30:52,514 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:30:52,514 - INFO - Extracted metadata: doc_id=ATO ID 2002/633, title=Capital gains tax: demolition of a dwelling: CGT event C1
+2025-03-08 21:30:52,516 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_633.json
+2025-03-08 21:30:52,517 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002691_00001.json
+2025-03-08 21:30:52,518 - INFO - Sending document to LLM for processing...
+2025-03-08 21:31:07,036 - INFO - LLM processing completed in 14.52 seconds
+2025-03-08 21:31:07,037 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:31:07,037 - INFO - Extracted metadata: doc_id=ATO ID 2002/691, title=CGT: Main Residence - apportioning cost base of land in excess of 2 hectares
+2025-03-08 21:31:07,039 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_691.json
+2025-03-08 21:31:07,041 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002744_00001.json
+2025-03-08 21:31:07,041 - INFO - Sending document to LLM for processing...
+2025-03-08 21:31:17,992 - INFO - LLM processing completed in 10.95 seconds
+2025-03-08 21:31:17,992 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:31:17,993 - INFO - Extracted metadata: doc_id=ATO ID 2002/744, title=Capital gains tax - creation of contractual rights where a club acquires the assets and liabilities of another club (in liquidation)
+2025-03-08 21:31:17,994 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_744.json
+2025-03-08 21:31:17,995 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002753_00001.json
+2025-03-08 21:31:17,996 - INFO - Sending document to LLM for processing...
+2025-03-08 21:31:28,234 - INFO - LLM processing completed in 10.24 seconds
+2025-03-08 21:31:28,235 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:31:28,235 - INFO - Extracted metadata: doc_id=ATO ID 2002/753, title=Capital gains tax: small business roll-over/ replacement active asset/ main residence
+2025-03-08 21:31:28,237 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_753.json
+2025-03-08 21:31:28,239 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002795_00001.json
+2025-03-08 21:31:28,240 - INFO - Sending document to LLM for processing...
+2025-03-08 21:31:40,792 - INFO - LLM processing completed in 12.55 seconds
+2025-03-08 21:31:40,793 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:31:40,793 - INFO - Extracted metadata: doc_id=ATO ID 2002/795, title=Capital Gains: Personal use asset - floor tiles
+2025-03-08 21:31:40,794 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_795.json
+2025-03-08 21:31:40,794 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002808_00001.json
+2025-03-08 21:31:40,795 - INFO - Sending document to LLM for processing...
+2025-03-08 21:31:52,593 - INFO - LLM processing completed in 11.80 seconds
+2025-03-08 21:31:52,594 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:31:52,594 - INFO - Extracted metadata: doc_id=ATO ID 2002/808, title=Capital gains tax: conversion from unincorporated association to incorporated association under Associations Incorporation Act 1981 (Qld)
+2025-03-08 21:31:52,596 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_808.json
+2025-03-08 21:31:52,597 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002809_00001.json
+2025-03-08 21:31:52,598 - INFO - Sending document to LLM for processing...
+2025-03-08 21:32:02,380 - INFO - LLM processing completed in 9.78 seconds
+2025-03-08 21:32:02,381 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:32:02,382 - INFO - Extracted metadata: doc_id=ATO ID 2002/809, title=Capital gains tax: Unincorporated association - disposal of asset
+2025-03-08 21:32:02,384 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_809.json
+2025-03-08 21:32:02,385 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002862_00001.json
+2025-03-08 21:32:02,386 - INFO - Sending document to LLM for processing...
+2025-03-08 21:32:10,676 - INFO - LLM processing completed in 8.29 seconds
+2025-03-08 21:32:10,677 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:32:10,677 - INFO - Extracted metadata: doc_id=ATO ID 2002/862, title=Capital gains tax: active asset test: interest in property acquired at different times
+2025-03-08 21:32:10,679 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_862.json
+2025-03-08 21:32:10,680 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002941_00001.json
+2025-03-08 21:32:10,681 - INFO - Sending document to LLM for processing...
+2025-03-08 21:32:20,300 - INFO - LLM processing completed in 9.62 seconds
+2025-03-08 21:32:20,301 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:32:20,301 - INFO - Extracted metadata: doc_id=ATO ID 2002/941, title=Capital gains tax - time of CGT event C2
+2025-03-08 21:32:20,303 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_941.json
+2025-03-08 21:32:20,304 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002955_00001.json
+2025-03-08 21:32:20,305 - INFO - Sending document to LLM for processing...
+2025-03-08 21:32:29,924 - INFO - LLM processing completed in 9.62 seconds
+2025-03-08 21:32:29,925 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:32:29,927 - INFO - Extracted metadata: doc_id=ATO ID 2002/955, title=Capital gains tax: Trust to company rollover
+2025-03-08 21:32:29,929 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_955.json
+2025-03-08 21:32:29,930 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2002964_00001.json
+2025-03-08 21:32:29,931 - INFO - Sending document to LLM for processing...
+2025-03-08 21:32:46,587 - INFO - LLM processing completed in 16.66 seconds
+2025-03-08 21:32:46,587 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:32:46,587 - INFO - Extracted metadata: doc_id=ATO ID 2002/964, title=Capital gains tax: trusts: calculation of beneficiary's net capital gain
+2025-03-08 21:32:46,588 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2002_964.json
+2025-03-08 21:32:46,588 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID20031031_00001.json
+2025-03-08 21:32:46,589 - INFO - Sending document to LLM for processing...
+2025-03-08 21:33:08,119 - INFO - LLM processing completed in 21.53 seconds
+2025-03-08 21:33:08,119 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:33:08,120 - INFO - Extracted metadata: doc_id=ATO ID 2003/1031, title=Capital Gains Tax: Demerger - CGT discount in relation to new interests if rollover not chosen
+2025-03-08 21:33:08,122 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2003_1031.json
+2025-03-08 21:33:08,123 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2003103_00001.json
+2025-03-08 21:33:08,124 - INFO - Sending document to LLM for processing...
+2025-03-08 21:33:17,371 - INFO - LLM processing completed in 9.25 seconds
+2025-03-08 21:33:17,372 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:33:17,372 - INFO - Extracted metadata: doc_id=ATO ID 2003/103, title=Capital gains tax: Choice and the small business roll-over
+2025-03-08 21:33:17,374 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2003_103.json
+2025-03-08 21:33:17,375 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID20031050_00001.json
+2025-03-08 21:33:17,376 - INFO - Sending document to LLM for processing...
+2025-03-08 21:33:27,164 - INFO - LLM processing completed in 9.79 seconds
+2025-03-08 21:33:27,164 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:33:27,165 - INFO - Extracted metadata: doc_id=ATO ID 2003/1050, title=Capital gains tax: demergers - cost base of the new interest in demerged entity where rollover is not chosen
+2025-03-08 21:33:27,165 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2003_1050.json
+2025-03-08 21:33:27,166 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2003105_00001.json
+2025-03-08 21:33:27,167 - INFO - Sending document to LLM for processing...
+2025-03-08 21:33:36,011 - INFO - LLM processing completed in 8.84 seconds
+2025-03-08 21:33:36,012 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:33:36,014 - INFO - Extracted metadata: doc_id=ATO ID 2003/105, title=Income or capital - payment on termination of an agreement to provide services
+2025-03-08 21:33:36,015 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2003_105.json
+2025-03-08 21:33:36,016 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2003109_00001.json
+2025-03-08 21:33:36,017 - INFO - Sending document to LLM for processing...
+2025-03-08 21:34:10,117 - INFO - LLM processing completed in 34.10 seconds
+2025-03-08 21:34:10,118 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:34:10,118 - INFO - Extracted metadata: doc_id=ATO ID 2003/109, title=Capital gains tax: Deceased estate - main residence exemption
+2025-03-08 21:34:10,120 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2003_109.json
+2025-03-08 21:34:10,121 - INFO - Processing file: /Users/kenmacpro/pinecone-upsert/testfiles_cgt/AID_AID2003110_00001.json
+2025-03-08 21:34:10,122 - INFO - Sending document to LLM for processing...
+2025-03-08 21:34:27,168 - INFO - LLM processing completed in 17.05 seconds
+2025-03-08 21:34:27,169 - INFO - Received response from LLM for single-chunk processing.
+2025-03-08 21:34:27,169 - INFO - Extracted metadata: doc_id=ATO ID 2003/110, title=Capital Allowances: balancing adjustment event on the theft of a depreciating asset
+2025-03-08 21:34:27,171 - INFO - Saved processed file to /Users/kenmacpro/pinecone-upsert/testfiles_law/json/ATO_ATO ID 2003_110.json

@@ -66,8 +66,8 @@ INPUT_DIR = os.getenv("ATO_INPUT_DIR", "/Users/kenmacpro/pinecone-upsert/testfil
 OUTPUT_DIR = os.getenv("JSON_OUTPUT_DIR", "/Users/kenmacpro/pinecone-upsert/testfiles_law/json")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Max files to process in one run
-MAX_FILES_TO_PROCESS = int(os.getenv("MAX_FILES_TO_PROCESS", "30"))
+# Max files to process in one run (0 = no limit)
+MAX_FILES_TO_PROCESS = int(os.getenv("MAX_FILES_TO_PROCESS", "0"))
 
 # Updated prompt for a single-chunk process with detailed instructions:
 single_chunk_prompt = """Please process the attached document to extract and summarize the following, while retaining the important text and structure. Do not invent new statements unless it is necessary for clarity or to fulfill the required format.
