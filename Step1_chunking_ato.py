@@ -24,6 +24,7 @@ import time
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+import concurrent.futures  # Add concurrent.futures for parallel processing
 
 # Load environment variables
 load_dotenv()
@@ -69,8 +70,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Max files to process in one run (0 = no limit)
 MAX_FILES_TO_PROCESS = int(os.getenv("MAX_FILES_TO_PROCESS", "0"))
 
+# Number of parallel workers (adjust based on your API rate limits)
+NUM_WORKERS = int(os.getenv("NUM_WORKERS", "5"))
+
 # Updated prompt for a single-chunk process with detailed instructions:
 single_chunk_prompt = """Please process the attached document to extract and summarize the following, while retaining the important text and structure. Do not invent new statements unless it is necessary for clarity or to fulfill the required format.
+
+Note: This appears to be a reference/metadata document, not the full ruling text. Please extract whatever information is available.
 
 Header/Metadata & References:
 - Doc ID: [If available]
@@ -80,16 +86,24 @@ Header/Metadata & References:
 - Legislative references, if any.
 
 Issue & Decision:
-- Identify and summarize the main issue addressed by the document and the decision or outcome. Provide additional detail and clarity in your explanation.
+- Identify and summarize the main issue addressed by the document, if indicated.
 
 Facts & Reasoning:
-- Extract and detail the relevant facts and background information. Describe the reasoning steps and include key examples where applicable, ensuring ample detail.
+- Extract any available information about facts, reasoning or background.
 
 Present your answer as a single comprehensive chunk with clearly labeled sections.
 
 ---
 Document content:
 """
+
+# NOTE: For a complete solution, these files would need to be enhanced by:
+# 1. Using the URLs in each file to fetch the actual full text of each ruling
+# 2. Using web scraping to obtain the complete document content
+# 3. Then processing the actual full text rather than just these reference files
+#
+# The current approach will only process the metadata and small snippets available
+# in these reference files.
 
 def remove_markdown(text: str) -> str:
     """
@@ -106,67 +120,86 @@ def call_llm(text: str, prompt: str) -> str:
     Calls the OpenAI ChatCompletion API with the given prompt and document text.
     Returns the LLM's response as a single processed chunk.
     """
+    full_prompt = prompt + text
+    prompt_tokens = len(full_prompt) / 4  # Rough estimate of tokens
+    
+    # Log the start of processing with size info
+    logging.info(f"Starting LLM processing - approx {prompt_tokens:.0f} tokens")
+    print(f"Starting LLM call (est. {prompt_tokens:.0f} tokens)...", end="", flush=True)
+    
     messages = [
         {"role": "system", "content": "You are an AI assistant specializing in Australian tax law and ATO rulings. Extract and organize the key information from ATO documents."},
-        {"role": "user", "content": prompt + text}
+        {"role": "user", "content": full_prompt}
     ]
     
     max_retries = 5
     for attempt in range(max_retries):
         try:
             start_time = time.time()  # Start timing
+            
+            # Update shorter timeout to avoid extremely long waits
             response = openai.ChatCompletion.create(
                 model="gpt-4o",  # Use the appropriate model name
                 messages=messages,
                 temperature=0,
-                timeout=30
+                timeout=90,  # 90 second timeout
+                request_timeout=90  # Also set request_timeout
             )
+            
             end_time = time.time()  # End timing
             processing_time = end_time - start_time
-            logging.info(f"LLM processing completed in {processing_time:.2f} seconds")
+            
+            # More detailed success logging
+            completion_tokens = len(response.choices[0].message.content) / 4  # Rough estimate
+            logging.info(f"LLM processing completed in {processing_time:.2f} seconds - approx {completion_tokens:.0f} output tokens")
+            print(f" done in {processing_time:.2f}s", flush=True)
             
             return response.choices[0].message.content
         except openai.error.OpenAIError as e:
             logging.error(f"Error communicating with OpenAI: {e}")
+            print(f" ERROR: {str(e)[:50]}...", flush=True)
+            
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff
                 logging.info(f"Retrying in {wait_time} seconds... (Attempt {attempt+1}/{max_retries})")
+                print(f"\nRetrying in {wait_time}s (Attempt {attempt+1}/{max_retries})...", end="", flush=True)
                 time.sleep(wait_time)
             else:
+                print(f"\nFailed after {max_retries} attempts.", flush=True)
                 raise
+        except Exception as e:
+            logging.error(f"Unexpected error during LLM call: {e}")
+            print(f" UNEXPECTED ERROR: {str(e)[:50]}...", flush=True)
+            raise
 
 def parse_metadata(chunk_text: str):
     """
     Attempt to extract metadata such as doc_id, title, URL, and date from the processed chunk.
-    Fallback to defaults if not found.
+    Returns a dictionary with metadata fields.
     """
-    doc_id = None
-    title = None
-    url = None
-    date_info = None
+    metadata = {
+        "Doc ID": None,
+        "Title": "Untitled Document",
+        "URL": "No URL Provided",
+        "Date": "No date info provided"
+    }
+    
     lines = chunk_text.splitlines()
     for line in lines:
         line_stripped = remove_markdown(line.strip())
         line_stripped = re.sub(r'^[\-\*\s]+', '', line_stripped).strip()
         if line_stripped.lower().startswith("doc id:"):
-            doc_id = line_stripped.split(":", 1)[1].strip()
+            metadata["Doc ID"] = line_stripped.split(":", 1)[1].strip()
         elif line_stripped.lower().startswith("title:"):
-            title = line_stripped.split(":", 1)[1].strip()
+            metadata["Title"] = line_stripped.split(":", 1)[1].strip()
         elif line_stripped.lower().startswith("url:") or line_stripped.lower().startswith("href:"):
-            url = line_stripped.split(":", 1)[1].strip()
-            if url and not url.lower().startswith("http"):
-                url = "https://ato.gov.au/" + url.lstrip("/")
+            metadata["URL"] = line_stripped.split(":", 1)[1].strip()
+            if metadata["URL"] and not metadata["URL"].lower().startswith("http"):
+                metadata["URL"] = "https://ato.gov.au/" + metadata["URL"].lstrip("/")
         elif line_stripped.lower().startswith("date:") or line_stripped.lower().startswith("date of decision:"):
-            date_info = line_stripped.split(":", 1)[1].strip()
-    if not doc_id:
-        doc_id = None  # Will use fallback file name later
-    if not title:
-        title = "Untitled Document"
-    if not url:
-        url = "No URL Provided"
-    if not date_info:
-        date_info = "No date info provided"
-    return doc_id, title, url, date_info
+            metadata["Date"] = line_stripped.split(":", 1)[1].strip()
+            
+    return metadata
 
 def write_individual_summary_log(log_file, filename, input_size, processing_time, success=True, error_message=None):
     """Write an individual summary log for an ATO file."""
@@ -191,6 +224,199 @@ def sanitize_filename(filename):
     for char in invalid_chars:
         filename = filename.replace(char, '_')
     return filename
+
+def process_single_file(file_data):
+    """Process a single file. This is a helper function for parallel processing."""
+    file_name, file_index, total_files, start_index = file_data
+    file_counter = start_index + file_index
+    file_start_time = time.time()  # Track time for this file
+    
+    progress_str = f"Processing file {file_index}/{total_files} [{file_counter}/{total_files}]: {file_name}"
+    print("\n" + "-" * len(progress_str))
+    print(progress_str)
+    print("-" * len(progress_str))
+    
+    local_file_path = os.path.join(INPUT_DIR, file_name)
+    logging.info(f"Processing file: {local_file_path}")
+    
+    try:
+        # Read the input JSON file
+        with open(local_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Debug: Print the keys in the JSON to help diagnose structure
+        logging.info(f"JSON keys in file: {list(data.keys())}")
+        
+        # Pre-extract document ID from filename or file_info for failsafe usage
+        doc_id_from_file = None
+        
+        # Try to get doc_id from file_name first (most reliable)
+        if 'file_name' in data and data['file_name']:
+            # Try to extract ATO ID from patterns like "AID|AID201126|00001.json"
+            file_parts = data['file_name'].split('|')
+            if len(file_parts) >= 2:
+                doc_id_from_file = file_parts[1]
+                logging.info(f"Extracted doc_id '{doc_id_from_file}' from file_name field")
+        
+        # If not found in file_name, try file_info -> href
+        if not doc_id_from_file and 'file_info' in data and isinstance(data['file_info'], dict):
+            if 'a_attr' in data['file_info'] and 'href' in data['file_info']['a_attr']:
+                href = data['file_info']['a_attr']['href']
+                # Extract from patterns like "/law/view/document?docid=AID/AID201126/00001"
+                if 'docid=' in href:
+                    docid_part = href.split('docid=')[1]
+                    doc_parts = docid_part.split('/')
+                    if len(doc_parts) >= 2:
+                        doc_id_from_file = doc_parts[1]
+                        logging.info(f"Extracted doc_id '{doc_id_from_file}' from URL")
+        
+        # If still not found, use the file name itself
+        if not doc_id_from_file:
+            doc_id_from_file = file_name.replace('.json', '')
+            logging.info(f"Using filename '{doc_id_from_file}' as doc_id")
+        
+        # Extract text content - try different possible fields
+        content = None
+        title_from_file = None
+        url_from_file = None
+        
+        # Get title from file_info if available (for fallback)
+        if 'file_info' in data and isinstance(data['file_info'], dict) and 'title' in data['file_info']:
+            title_from_file = data['file_info']['title']
+        
+        # Get URL from file_info if available (for fallback)
+        if 'file_info' in data and isinstance(data['file_info'], dict) and 'a_attr' in data['file_info']:
+            if 'href' in data['file_info']['a_attr']:
+                href = data['file_info']['a_attr']['href']
+                url_from_file = "https://ato.gov.au" + href if href.startswith('/') else href
+        
+        # Option 1: Try 'content' field
+        if 'content' in data and data['content']:
+            content = data['content']
+            logging.info("Found content in 'content' field")
+        
+        # Option 2: Try 'page_md' field (common in ATO reference files)
+        elif 'page_md' in data and data['page_md']:
+            content = data['page_md']
+            # Also include file_info if available
+            if title_from_file:
+                content += f"\n\nTitle: {title_from_file}"
+            if url_from_file:
+                content += f"\nURL: {url_from_file}"
+            logging.info("Found content in 'page_md' field")
+        
+        # Option 3: Try 'text' field
+        elif 'text' in data and data['text']:
+            content = data['text']
+            logging.info("Found content in 'text' field")
+            
+        # Option 4: Try 'file_info' -> 'content'
+        elif 'file_info' in data and isinstance(data['file_info'], dict):
+            if 'content' in data['file_info'] and data['file_info']['content']:
+                content = data['file_info']['content']
+                logging.info("Found content in 'file_info.content' field")
+        
+        # Option 5: If we have HTML, try to extract text
+        elif 'html' in data and data['html']:
+            content = data['html']
+            content = re.sub(r'<[^>]+>', ' ', content)  # Simple HTML tag removal
+            logging.info("Found and cleaned HTML content")
+        
+        # Handle minimal content case - construct content from available metadata
+        if not content or len(content.strip()) < 50:  # Very minimal content
+            logging.warning(f"Content is minimal or empty. Constructing from metadata.")
+            content = "ATO Document Reference\n\n"
+            
+            if title_from_file:
+                content += f"Title: {title_from_file}\n"
+            if doc_id_from_file:
+                content += f"Document ID: {doc_id_from_file}\n"
+            if url_from_file:
+                content += f"URL: {url_from_file}\n"
+                
+            if 'path_info' in data and isinstance(data['path_info'], list):
+                content += "\nCategories:\n"
+                for item in data['path_info']:
+                    if isinstance(item, dict) and 'title' in item:
+                        content += f"- {item['title']}\n"
+            
+            logging.info(f"Constructed content from metadata: {len(content)} chars")
+        
+        file_size = len(content)
+        logging.info(f"Content length: {file_size} characters")
+        
+        # Call LLM to extract and structure information
+        structured_content = call_llm(content, single_chunk_prompt)
+        
+        # Extract metadata from the structured content
+        extracted_metadata = parse_metadata(structured_content)
+        
+        # Use pre-extracted doc_id if LLM extraction failed
+        extracted_doc_id = extracted_metadata.get("Doc ID")
+        if not extracted_doc_id or extracted_doc_id == "Not available":
+            extracted_doc_id = doc_id_from_file
+            logging.info(f"Using pre-extracted doc_id: {extracted_doc_id}")
+        
+        # Sanitize filename to replace invalid characters
+        output_filename = f"ATO_{sanitize_filename(extracted_doc_id)}.json"
+        
+        # Create the output JSON structure with metadata and chunk
+        output_data = {
+            "title": extracted_metadata.get("Title", title_from_file or "Unknown Title"),
+            "url": extracted_metadata.get("URL", url_from_file or ""),
+            "text": structured_content,
+            "metadata": {
+                "doc_id": extracted_doc_id,
+                "date_info": extracted_metadata.get("Date", ""),
+                "document_type": "ato_ruling",
+                "source_file": file_name,
+                "creation_date": datetime.datetime.now().isoformat()
+            }
+        }
+        
+        # Save the processed file
+        output_path = os.path.join(OUTPUT_DIR, output_filename)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
+        
+        # Calculate processing time
+        file_duration = time.time() - file_start_time
+        
+        return {
+            "status": "success",
+            "file_name": file_name,
+            "output_filename": output_filename,
+            "file_size": file_size,
+            "duration": file_duration
+        }
+        
+    except Exception as e:
+        error_msg = f"Error processing file {file_name}: {e}"
+        logging.error(error_msg)
+        file_duration = time.time() - file_start_time
+        
+        # Additional debugging for failed files
+        try:
+            with open(local_file_path, 'r', encoding='utf-8') as f:
+                sample_data = json.load(f)
+                logging.error(f"File structure: Keys at root level: {list(sample_data.keys())}")
+                logging.error(f"File size: {os.path.getsize(local_file_path)} bytes")
+                
+                # Save a copy of the problematic file for examination
+                debug_file = os.path.join(LOG_DIR, f"debug_{file_name}")
+                with open(debug_file, 'w', encoding='utf-8') as df:
+                    json.dump(sample_data, df, indent=2)
+                logging.error(f"Saved debug copy to {debug_file}")
+        except Exception as debug_err:
+            logging.error(f"Error during debugging: {debug_err}")
+        
+        return {
+            "status": "failed",
+            "file_name": file_name,
+            "error": str(e),
+            "file_size": len(content) if 'content' in locals() else 0,
+            "duration": file_duration
+        }
 
 def main():
     # Track overall start time
@@ -245,166 +471,46 @@ def main():
         else:
             logging.info(f"Will process all {len(files_to_process)} remaining files")
 
-        # Process files
-        for i, file_name in enumerate(files_to_process, 1):
-            file_counter = start_index + i
-            file_start_time = time.time()  # Track time for this file
+        # Prepare file data for parallel processing
+        file_data_list = [(file_name, i, len(files_to_process), start_index) 
+                          for i, file_name in enumerate(files_to_process, 1)]
+        
+        # Process files in parallel
+        print(f"\nProcessing with {NUM_WORKERS} parallel workers")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:
+            results = list(executor.map(process_single_file, file_data_list))
             
-            progress_str = f"Processing file {i}/{len(files_to_process)} [{file_counter}/{total_files}]: {file_name}"
-            print("\n" + "-" * len(progress_str))
-            print(progress_str)
-            print("-" * len(progress_str))
-            
-            local_file_path = os.path.join(INPUT_DIR, file_name)
-            logging.info(f"Processing file: {local_file_path}")
-            
-            # Calculate elapsed time since start of run
-            elapsed_since_start = time.time() - overall_start_time
-            hours, rem = divmod(elapsed_since_start, 3600)
-            minutes, seconds = divmod(rem, 60)
-            print(f"Time elapsed since start: {int(hours)}h {int(minutes)}m {int(seconds)}s")
-            
-            file_size = os.path.getsize(local_file_path)
-            
-            try:
-                with open(local_file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except Exception as e:
-                error_msg = f"Error reading JSON file {file_name}: {e}"
-                logging.error(error_msg)
-                failed_files.append((file_name, error_msg))
-                
-                # Create summary log for failed file
-                dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                summary_filename = f"{file_name}_error_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(LOG_DIR, summary_filename)
-                file_duration = time.time() - file_start_time
-                write_individual_summary_log(summary_log_path, file_name, file_size, file_duration, False, error_msg)
-                
-                # Update checkpoint even on failure to skip problematic file next time
-                with open(checkpoint_path, "w") as cp:
-                    cp.write(str(file_counter))
-                continue
-            
-            # Extract title and URL from the JSON file
-            file_info = data.get("file_info", {})
-            file_title = file_info.get("title", "Untitled Document")
-            file_href = file_info.get("a_attr", {}).get("href", "")
-            if file_href:
-                if not file_href.lower().startswith("http"):
-                    # Remove any leading slash from href and join with base URL
-                    full_url = "https://ato.gov.au" + file_href if file_href.startswith("/") else "https://ato.gov.au/" + file_href
+            # Process results
+            for result in results:
+                if result["status"] == "success":
+                    processed_files.append(result["file_name"])
+                    time_per_file[result["file_name"]] = result["duration"]
+                    
+                    # Create individual summary log
+                    dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                    summary_filename = f"{result['file_name']}_summary_{dt_string}.txt"
+                    summary_log_path = os.path.join(LOG_DIR, summary_filename)
+                    write_individual_summary_log(summary_log_path, result["file_name"], 
+                                                result["file_size"], result["duration"])
                 else:
-                    full_url = file_href
-            else:
-                full_url = "No URL Provided"
-            
-            # Convert the entire JSON content to a string
-            json_content = json.dumps(data, indent=2)
-            
-            # Call the LLM with the entire JSON content
-            try:
-                logging.info(f"Sending document to LLM for processing...")
-                llm_response = call_llm(json_content, single_chunk_prompt)
-            except Exception as e:
-                error_msg = f"LLM call failed for file {file_name}: {e}"
-                logging.error(error_msg)
-                failed_files.append((file_name, error_msg))
-                
-                # Create summary log for failed file
-                dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                summary_filename = f"{file_name}_error_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(LOG_DIR, summary_filename)
-                file_duration = time.time() - file_start_time
-                write_individual_summary_log(summary_log_path, file_name, file_size, file_duration, False, error_msg)
-                
-                with open(checkpoint_path, "w") as cp:
-                    cp.write(str(file_counter))
-                continue
-            
-            logging.info(f"Received response from LLM for single-chunk processing.")
-            processed_chunk = llm_response.strip()
-            
-            debug_print("Processed Chunk (first 200 chars):\n" + processed_chunk[:200] + "...")
-            
-            # Parse metadata from the processed chunk
-            extracted_doc_id, extracted_title, extracted_url, extracted_date_info = parse_metadata(processed_chunk)
-            logging.info(f"Extracted metadata: doc_id={extracted_doc_id}, title={extracted_title}")
-            
-            # Use fallback file-level metadata if LLM extraction returned defaults or if the URL is relative/missing
-            if not extracted_doc_id:
-                extracted_doc_id = file_name.rsplit(".", 1)[0]
-            if extracted_title == "Untitled Document":
-                extracted_title = file_title
-            if extracted_url == "No URL Provided" or not extracted_url:
-                extracted_url = full_url
-            elif not extracted_url.lower().startswith("http"):
-                extracted_url = "https://ato.gov.au" + extracted_url
-            
-            # Create output JSON structure
-            output_data = {
-                "title": extracted_title,
-                "url": extracted_url,
-                "text": processed_chunk,
-                "metadata": {
-                    "doc_id": extracted_doc_id,
-                    "date_info": extracted_date_info,
-                    "document_type": "ato_ruling",
-                    "source_file": file_name,
-                    "creation_date": datetime.datetime.now().isoformat()
-                }
-            }
-            
-            # Save processed JSON
-            output_filename = f"ATO_{sanitize_filename(extracted_doc_id)}.json"
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
-            try:
-                with open(output_path, "w", encoding="utf-8") as outf:
-                    json.dump(output_data, outf, indent=2)
-                logging.info(f"Saved processed file to {output_path}")
-                processed_files.append(file_name)
-                
-                # Calculate processing time for this file
-                file_end_time = time.time()
-                file_duration = file_end_time - file_start_time
-                time_per_file[file_name] = file_duration
-                
-                # Convert time to display format
-                hours, rem = divmod(file_duration, 3600)
-                minutes, seconds = divmod(rem, 60)
-                print(f"Completed processing {file_name} in {int(hours)}h {int(minutes)}m {int(seconds)}s")
-                
-                # Create individual summary log
-                dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                summary_filename = f"{file_name}_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
-                write_individual_summary_log(summary_log_path, file_name, file_size, file_duration)
-                
-            except Exception as e:
-                error_msg = f"Error saving processed file {output_filename}: {e}"
-                logging.error(error_msg)
-                failed_files.append((file_name, error_msg))
-                
-                # Create summary log for failed file
-                dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                summary_filename = f"{file_name}_error_summary_{dt_string}.txt"
-                summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
-                file_duration = time.time() - file_start_time
-                write_individual_summary_log(summary_log_path, file_name, file_size, file_duration, False, error_msg)
-            
-            # Update checkpoint file after processing each file (successful or not)
-            try:
-                with open(checkpoint_path, "w") as cp:
-                    cp.write(str(file_counter))
-            except Exception as e:
-                logging.error(f"Error writing to checkpoint file: {e}")
-            
-            # Show elapsed time since start of run
-            total_elapsed = time.time() - overall_start_time
-            t_hours, t_rem = divmod(total_elapsed, 3600)
-            t_minutes, t_seconds = divmod(t_rem, 60)
-            print(f"Total time elapsed since start: {int(t_hours)}h {int(t_minutes)}m {int(t_seconds)}s")
-    
+                    failed_files.append((result["file_name"], result["error"]))
+                    
+                    # Create summary log for failed file
+                    dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                    summary_filename = f"{result['file_name']}_error_summary_{dt_string}.txt"
+                    summary_log_path = os.path.join(LOG_DIR, summary_filename)
+                    write_individual_summary_log(summary_log_path, result["file_name"], 
+                                                 result["file_size"], result["duration"], 
+                                                 False, result["error"])
+        
+        # Update checkpoint to the end of all processed files
+        file_counter = start_index + len(files_to_process)
+        try:
+            with open(checkpoint_path, "w") as cp:
+                cp.write(str(file_counter))
+        except Exception as e:
+            logging.error(f"Error writing to checkpoint file: {e}")
+
     except Exception as e:
         logging.error(f"Error accessing the directory: {e}")
         import traceback
