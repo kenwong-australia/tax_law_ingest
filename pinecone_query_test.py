@@ -1,8 +1,9 @@
 import openai
-import pinecone
+from pinecone import Pinecone, ServerlessSpec
 import logging
 import datetime
 import time
+import re
 from dotenv import load_dotenv
 import os
 load_dotenv()
@@ -13,22 +14,32 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 pinecone_api_key = os.getenv("PINECONE_API_KEY")
 pinecone_env = os.getenv("PINECONE_ENV")
 index_name = os.getenv("PINECONE_INDEX")
-VECTOR_DIMENSION = 1536  # For the embedding vector
+VECTOR_DIMENSION = 3072  # For the embedding vector - text-embedding-3-large uses 3072 dimensions
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_embedding(text: str, model="text-embedding-ada-002") -> list:
+def get_embedding(text: str, model="text-embedding-3-large") -> list:
     """Obtain an embedding vector for the given text."""
     response = openai.Embedding.create(input=[text], model=model)
     return response['data'][0]['embedding']
 
 def init_pinecone(api_key: str):
     """Initialize Pinecone and return the index instance."""
-    pinecone.init(api_key=api_key)
-    if index_name not in pinecone.list_indexes():
-        pinecone.create_index(index_name, dimension=VECTOR_DIMENSION)
-    return pinecone.Index(index_name)
+    # Create Pinecone client
+    pc = Pinecone(api_key=api_key)
+    
+    # Get the index
+    if index_name not in pc.list_indexes().names():
+        logging.warning(f"Index {index_name} not found. Creating new index...")
+        pc.create_index(
+            name=index_name,
+            dimension=VECTOR_DIMENSION,
+            metric='cosine'
+        )
+    
+    # Return the index
+    return pc.Index(index_name)
 
 def query_pinecone(index, query_vector, top_k=10, namespace=None):
     """Query the Pinecone index with the provided vector and return matches with metadata."""
@@ -148,12 +159,40 @@ Only include the ones that are truly relevant.
 
     return used_indices
 
+def safe_print(text):
+    """Print text safely, escaping any special shell characters."""
+    # Replace any potentially problematic characters
+    text = text.replace('?', '\\?')
+    text = text.replace('*', '\\*')
+    text = text.replace('[', '\\[')
+    text = text.replace(']', '\\]')
+    text = text.replace('-', '\\-')
+    print(text)
+
 def main():
     # Initialize Pinecone
     index = init_pinecone(pinecone_api_key)
     
+    # Ask user which namespace to query
+    print("\nWhich data source would you like to query?")
+    print("1. Legislation (default)")
+    print("2. ATO Rulings")
+    print("3. Both (combined results)")
+    
+    choice = input("Enter your choice (1-3): ").strip()
+    
+    # Set namespace based on user choice
+    namespace = None  # Default to legislation (no namespace)
+    if choice == "2":
+        namespace = "ato"
+        print("Querying ATO Rulings...")
+    elif choice == "3":
+        print("Querying both Legislation and ATO Rulings...")
+    else:  # Default or choice "1"
+        print("Querying Legislation...")
+    
     # Read user query from console
-    user_query = input("Enter your query: ").strip()
+    user_query = input("\nEnter your query: ").strip()
     if not user_query:
         print("No query provided.")
         return
@@ -161,8 +200,20 @@ def main():
     # Get embedding for the query
     query_vector = get_embedding(user_query)
     
-    # Query Pinecone for matching chunks
-    matches = query_pinecone(index, query_vector, top_k=10, namespace="ato")
+    # Handle the combined query case
+    if choice == "3":
+        # Query both namespaces and combine results
+        legislation_matches = query_pinecone(index, query_vector, top_k=5)  # No namespace for legislation
+        ato_matches = query_pinecone(index, query_vector, top_k=5, namespace="ato")
+        
+        # Combine matches, sorting by score
+        matches = legislation_matches + ato_matches
+        matches.sort(key=lambda x: x.get("score", 0), reverse=True)
+        matches = matches[:10]  # Keep top 10 overall
+    else:
+        # Query Pinecone for matching chunks with specified namespace
+        matches = query_pinecone(index, query_vector, top_k=10, namespace=namespace)
+    
     if not matches:
         print("No matching records found.")
         return
@@ -177,19 +228,31 @@ def main():
     used_chunk_indices = identify_used_chunks_gpt(answer, matches)
 
     # Print the final answer
-    print("\nAnswer:\n", answer)
-
-    # Print only the used chunks as references
-    print("\nUsed/Relevant Chunks:")
+    print("\nAnswer:")
+    # Split answer into lines and print each line separately to avoid shell interpretation
+    answer_lines = answer.split('\n')
+    for line in answer_lines:
+        safe_print(line)
+    
+    # Print only a simple list of sections used as references
+    print("\nRelevant Sections:")
     for i in used_chunk_indices:
         # 'i' is 1-based; matches is 0-based
         match = matches[i-1]
         metadata = match.get("metadata", {})
-        print("-----")
-        print(f"Doc ID: {metadata.get('doc_id', 'N/A')}")
-        print(f"Title: {metadata.get('title', 'N/A')}")
-        print(f"URL: {metadata.get('url', 'N/A')}")
-        print(f"Chunk Text: {metadata.get('chunk_text', 'N/A')}\n")
+        is_ato = choice == "2" or (choice == "3" and "ato" in str(metadata.get('doc_id', '')))
+        source = "ATO Ruling" if is_ato else "Legislation"
+        
+        # Get the section reference - prefer full_reference, fall back to section, then doc_id
+        section_ref = metadata.get("full_reference", metadata.get("section", metadata.get("doc_id", "Unknown")))
+        
+        # Include URL for ATO rulings
+        if is_ato:
+            url = metadata.get("url", "No URL available")
+            safe_print(f"* {source}: {section_ref}")  # Using asterisk instead of dash or bullet
+            safe_print(f"  URL: {url}")
+        else:
+            safe_print(f"* {source}: {section_ref}")  # Using asterisk instead of dash or bullet
 
 if __name__ == "__main__":
     main()
