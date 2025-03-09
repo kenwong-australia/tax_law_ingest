@@ -120,6 +120,21 @@ def call_llm(text: str, prompt: str) -> str:
     Calls the OpenAI ChatCompletion API with the given prompt and document text.
     Returns the LLM's response as a single processed chunk.
     """
+    # Apply token limit - GPT-4o has ~8K token limit, leave room for prompt and response
+    # Using rough estimate of 4 chars per token
+    MAX_CONTENT_CHARS = 100000  # ~ tokens, leaving room for prompt and response
+    
+    # Check if text is too long and truncate if needed
+    original_length = len(text)
+    if original_length > MAX_CONTENT_CHARS:
+        text = text[:MAX_CONTENT_CHARS]
+        truncation_message = f"Content truncated from {original_length} to {len(text)} characters due to token limits"
+        logging.warning(truncation_message)
+        print(f"\n⚠️ {truncation_message}")
+        
+        # Add a note about truncation to the text
+        text += "\n\n[Note: This content was truncated due to length limits. Only the beginning portion is shown.]"
+    
     full_prompt = prompt + text
     prompt_tokens = len(full_prompt) / 4  # Rough estimate of tokens
     
