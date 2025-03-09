@@ -10,6 +10,8 @@ import re
 import sys
 from dotenv import load_dotenv
 from pathlib import Path
+import requests
+import threading
 
 load_dotenv()
 
@@ -115,23 +117,56 @@ def main():
     failed_files = []     # Track failed files
     time_per_file = {}    # Track processing time for each file
 
-    # Initialize Pinecone index
-    index = init_pinecone(pinecone_api_key, pinecone_env, index_name)
-    logging.info(f"Connected to Pinecone index '{index_name}'.")
-
+    # Initialize Pinecone
+    try:
+        logging.info(f"Initializing Pinecone connection to index {index_name}")
+        index = init_pinecone(pinecone_api_key, pinecone_env, index_name)
+    except Exception as e:
+        logging.error(f"Error initializing Pinecone: {e}")
+        return
+    
+    # Check if JSON directory exists
+    if not os.path.exists(LOCAL_JSON_DIR):
+        logging.error(f"JSON directory does not exist: {LOCAL_JSON_DIR}")
+        return
+    
     # Gather all JSON files from the local directory
-    json_files = [f for f in os.listdir(LOCAL_JSON_DIR) if f.lower().endswith('.json')]
+    json_files = sorted([f for f in os.listdir(LOCAL_JSON_DIR) if f.lower().endswith('.json')])
     total_files = len(json_files)
     logging.info(f"Found {total_files} JSON file(s) to process.")
 
-    for i, file_name in enumerate(json_files, start=1):
+    # Process JSON files
+    for file_idx, file_name in enumerate(json_files, start=1):
         file_path = os.path.join(LOCAL_JSON_DIR, file_name)
-        start_time = time.time()  # Track start time for this file
-
+        file_start_time = time.time()
+        
+        # Progress indicator
+        progress_str = f"Processing file {file_idx}/{total_files}: {file_name}"
+        print("\n" + "-" * len(progress_str))
+        print(progress_str)
+        print("-" * len(progress_str))
+        
+        # Calculate elapsed time since start
+        elapsed = time.time() - overall_start_time
+        h, m = divmod(elapsed, 3600)
+        m, s = divmod(m, 60)
+        print(f"Time elapsed: {int(h)}h {int(m)}m {int(s)}s")
+        
         try:
-            # Load JSON
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            # Use timeout context manager to prevent indefinite hanging
+            with timeout(seconds=300):  # 5-minute timeout per file
+                # Process the file
+                logging.info(f"Processing {file_path}")
+                
+                # Load JSON file
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    try:
+                        data = json.load(f)
+                    except json.JSONDecodeError as e:
+                        error_msg = f"Error parsing JSON: {e}"
+                        logging.error(error_msg)
+                        failed_files.append((file_name, error_msg))
+                        continue
 
             # Extract text
             text_data = data.get("text", "No Text Provided")
@@ -254,12 +289,12 @@ def main():
             # Track success
             processed_files.append(file_name)
             elapsed_time = time.time() - overall_start_time
-            time_per_file[file_name] = round(time.time() - start_time, 2)
+            time_per_file[file_name] = round(time.time() - file_start_time, 2)
 
             # Convert elapsed time to hours, minutes, and seconds
             hours, rem = divmod(elapsed_time, 3600)
             minutes, seconds = divmod(rem, 60)
-            logging.info(f"Progress: {i}/{total_files} files upserted. Time elapsed: {int(hours)}h {int(minutes)}m {int(seconds)}s.")
+            logging.info(f"Progress: {file_idx}/{total_files} files upserted. Time elapsed: {int(hours)}h {int(minutes)}m {int(seconds)}s.")
 
             # Create individual summary log
             dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -276,13 +311,13 @@ def main():
             dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             summary_filename = f"{file_name}_pinecone_error_summary_{dt_string}.txt"
             summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
-            file_duration = time.time() - start_time
+            file_duration = time.time() - file_start_time
             write_individual_summary_log(summary_log_path, file_name, os.path.getsize(file_path), file_duration, False, error_msg)
             
         # Update checkpoint file after processing each file (successful or not)
         try:
             with open(checkpoint_path, "w") as cp:
-                cp.write(str(i))
+                cp.write(str(file_idx))
         except Exception as e:
             logging.error(f"Error writing to checkpoint file: {e}")
 
@@ -366,6 +401,54 @@ def write_individual_summary_log(filename, file_name, file_size, duration, succe
         log_f.write(f"Duration: {duration:.2f} seconds\n")
         if not success:
             log_f.write(f"Error: {error_msg}\n")
+
+
+# Define a timeout context manager to prevent indefinite hangs
+class TimeoutError(Exception):
+    """Custom timeout error"""
+    pass
+
+class timeout:
+    def __init__(self, seconds=60):
+        self.seconds = seconds
+        self.timer = None
+        
+    def handle_timeout(self):
+        logging.error(f"Operation timed out after {self.seconds} seconds")
+        raise TimeoutError(f"Operation timed out after {self.seconds} seconds")
+        
+    def __enter__(self):
+        self.timer = threading.Timer(self.seconds, self.handle_timeout)
+        self.timer.daemon = True
+        self.timer.start()
+        
+    def __exit__(self, type, value, traceback):
+        if self.timer:
+            self.timer.cancel()
+            self.timer = None
+
+
+def upsert_to_pinecone(index, vectors, namespace=None):
+    """Upsert vectors to Pinecone with timeout handling."""
+    max_retries = 5
+    backoff_factor = 2
+    
+    for attempt in range(max_retries):
+        try:
+            # Add timeout to the upsert operation
+            start_time = time.time()
+            result = index.upsert(vectors=vectors, namespace=namespace, timeout=120)
+            processing_time = time.time() - start_time
+            logging.info(f"Pinecone upsert completed in {processing_time:.2f} seconds")
+            return result
+        except Exception as e:
+            if attempt < max_retries - 1:
+                sleep_time = backoff_factor ** attempt
+                logging.warning(f"Pinecone upsert error: {e}. Retrying in {sleep_time}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(sleep_time)
+            else:
+                logging.error(f"Failed to upsert to Pinecone after {max_retries} attempts: {e}")
+                raise
 
 
 if __name__ == "__main__":
