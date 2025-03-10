@@ -382,7 +382,7 @@ def process_single_file(file_data):
             "text": structured_content,
             "metadata": {
                 "doc_id": extracted_doc_id,
-                "full_reference": f"{extracted_doc_id} {extracted_metadata.get('Title', title_from_file or 'Unknown Title')}",
+                "full_reference": f"ATO ID {extracted_doc_id.replace('ATO ID ', '')}" + f" {extracted_metadata.get('Title', title_from_file or 'Unknown Title')}",
                 "date_info": extracted_metadata.get("Date", ""),
                 "document_type": "ato_ruling",
                 "source_file": file_name,

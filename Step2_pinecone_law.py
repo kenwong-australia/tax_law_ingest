@@ -10,7 +10,7 @@ import re
 import sys
 from dotenv import load_dotenv
 from pathlib import Path
-import requests
+# import requests
 import threading
 
 load_dotenv()
