@@ -52,4 +52,4 @@ log_pinecone_*
 .idea/
 .vscode/
 *.swp
-*.swolog/chunking
+*.swologs/chunking
