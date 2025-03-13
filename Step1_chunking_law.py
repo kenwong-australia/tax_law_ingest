@@ -30,28 +30,58 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Set OpenAI API key from environment variable
+openai.api_key = os.environ.get("OPENAI_API_KEY")
+if not openai.api_key:
+    raise ValueError("OPENAI_API_KEY environment variable not found. Please check your .env file.")
+
+# Load keyword library
+with open('tax_keywords.json', 'r', encoding='utf-8') as kw_file:
+    keyword_dict = json.load(kw_file)
+
+# Create mappings for case-insensitive matching
+KEYWORD_TO_CATEGORY = {}
+KEYWORD_ORIGINAL_CASE = {}
+
+for category, keywords in keyword_dict.items():
+    category_lower = category.lower()
+    KEYWORD_ORIGINAL_CASE[category_lower] = category
+    KEYWORD_TO_CATEGORY[category_lower] = category
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        KEYWORD_ORIGINAL_CASE[keyword_lower] = keyword
+        KEYWORD_TO_CATEGORY[keyword_lower] = category
+
+# Define TAX_KEYWORDS as a flat list of all keywords and categories from the keyword library
+TAX_KEYWORDS = list(KEYWORD_ORIGINAL_CASE.values())
+
 # --- CONFIGURATION ---
 # Create local log directory
-LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs"
+LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs/chunking"
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # Set up logging with timestamp
-timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE_NAME = os.path.join(LOG_DIR, f"log_chunking_law_{timestamp_str}.txt")
+timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+MAIN_LOG_FILE_NAME = os.path.join(LOG_DIR, f"log_chunking_law_{timestamp_str}.txt")
 
 # Log the current working directory
 print(f"Current working directory: {os.getcwd()}")
 print(f"Log files will be saved to: {LOG_DIR}")
 
-# Configure logging to both file and console
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE_NAME),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Configure the root logger only once at the beginning
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+# Console handler - add only once
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# Main file handler
+main_file_handler = logging.FileHandler(MAIN_LOG_FILE_NAME)
+main_file_handler.setFormatter(formatter)
+logger.addHandler(main_file_handler)
 
 # Global debug flag.
 DEBUG = True
@@ -172,6 +202,10 @@ def clean_and_parse_toc_from_doc(doc):
         if "means" in line or "in relation to" in line:
             continue
         
+        # Skip sections with the title 'What this Division is about'
+        if 'what this division is about' in line.lower():
+            continue
+        
         match = re.match(section_pattern, line)
         if match:
             section1, section2, title = match.groups()
@@ -268,6 +302,141 @@ def text_to_markdown(paragraphs, start_idx, end_idx, section_number, section_tit
     
     return "".join(markdown_lines)
 
+def extract_keywords_with_llm(text, keyword_library):
+    prompt = f"""
+    Extract relevant keywords from the following text based on the provided keyword library.
+
+    Text:
+    {text}
+
+    Keyword Library:
+    {', '.join(keyword_library)}
+
+    Return keywords as a comma-separated list.
+    """
+    
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Attempt to call the OpenAI API
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=100,
+                request_timeout=60  # Set a timeout of 60 seconds
+            )
+            
+            # Extract keywords from the response with better error handling
+            try:
+                # Log the response type for debugging
+                logging.debug(f"Response type: {type(response)}")
+                
+                # Access the content based on the response type
+                try:
+                    if hasattr(response, 'choices') and len(response.choices) > 0:
+                        # Using attribute access for OpenAIObject
+                        if hasattr(response.choices[0], 'message') and hasattr(response.choices[0].message, 'content'):
+                            keywords_text = response.choices[0].message.content
+                            if keywords_text is not None:
+                                keywords_text = keywords_text.strip()
+                            else:
+                                keywords_text = ""
+                        else:
+                            raise AttributeError("Message or content attribute not found in response")
+                    elif isinstance(response, dict) and 'choices' in response and len(response['choices']) > 0:
+                        # Dictionary access
+                        keywords_text = response['choices'][0]['message']['content'].strip()
+                    else:
+                        raise ValueError("Unexpected response structure")
+                        
+                except (AttributeError, IndexError, KeyError) as access_error:
+                    # Handle common access errors
+                    logging.warning(f"Error accessing response content: {str(access_error)}")
+                    # Try converting to string and parsing
+                    try:
+                        response_str = str(response)
+                        if '"content": "' in response_str:
+                            content_start = response_str.find('"content": "') + 12
+                            content_end = response_str.find('"', content_start)
+                            keywords_text = response_str[content_start:content_end].strip()
+                        else:
+                            logging.error("Could not find content in response string")
+                            return [], []
+                    except Exception as e:
+                        logging.error(f"Failed to extract content from response string: {str(e)}")
+                        return [], []
+                
+                # Check if we actually got any keywords
+                if not keywords_text:
+                    logging.warning("No keywords text found in the response")
+                    return [], []
+                    
+                # Log the raw keywords response for debugging
+                logging.info(f"Raw keywords response: {keywords_text}")
+                
+                # Parse the comma-separated keywords
+                raw_keywords = [k.strip() for k in keywords_text.split(',') if k.strip()]
+                logging.info(f"Raw keywords after splitting: {raw_keywords}")
+                
+                # Case-insensitive keyword matching
+                # Convert all library keywords to lowercase for comparison
+                keyword_library_lower = [k.lower() for k in keyword_library]
+                valid_keywords = set()
+                matched_categories = set()
+                
+                for keyword in raw_keywords:
+                    keyword_lower = keyword.lower()
+
+                    if keyword_lower in KEYWORD_TO_CATEGORY:
+                        original_keyword = KEYWORD_ORIGINAL_CASE[keyword_lower]
+                        category = KEYWORD_TO_CATEGORY[keyword_lower]
+                        valid_keywords.add(original_keyword)
+                        matched_categories.add(category)
+                        logging.info(f"Matched keyword '{original_keyword}' under category '{category}'")
+                    else:
+                        # Partial matching fallback
+                        for lib_keyword_lower in KEYWORD_TO_CATEGORY:
+                            if keyword_lower in lib_keyword_lower or lib_keyword_lower in keyword_lower:
+                                original_keyword = KEYWORD_ORIGINAL_CASE[lib_keyword_lower]
+                                category = KEYWORD_TO_CATEGORY[lib_keyword_lower]
+                                valid_keywords.add(original_keyword)
+                                matched_categories.add(category)
+                                logging.info(f"Partial match '{keyword}' → '{original_keyword}' under category '{category}'")
+                                break
+                
+                # Convert sets to sorted lists for consistent ordering
+                valid_keywords = sorted(valid_keywords)
+                matched_categories = sorted(matched_categories)
+                
+                logging.info(f"FINAL KEYWORDS: {len(valid_keywords)} keywords: {valid_keywords}")
+                return valid_keywords, matched_categories
+            except Exception as parsing_error:
+                # More detailed error logging for response parsing issues
+                logging.error(f"Error parsing OpenAI response: {str(parsing_error)}")
+                logging.error(f"Response type: {type(response)}")
+                logging.error(f"Response content: {str(response)[:500]}...")  # Log first 500 chars
+                return [], []
+            
+        except (openai.error.Timeout, openai.error.APIError, openai.error.ServiceUnavailableError) as e:
+            # Log the error
+            if attempt < max_retries - 1:
+                logging.warning(f"OpenAI API error (attempt {attempt+1}/{max_retries}): {str(e)}. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                # Increase the delay for next retry (exponential backoff)
+                retry_delay *= 2
+            else:
+                logging.error(f"Failed to extract keywords after {max_retries} attempts: {str(e)}")
+                # Return an empty list of keywords if all retries fail
+                return [], []
+        
+        except Exception as e:
+            # Handle any other unexpected errors
+            logging.error(f"Unexpected error in keyword extraction: {str(e)}")
+            return [], []
+
 def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legislation_title,
                                      docx_filename=None, current_datetime=None):
     """
@@ -339,14 +508,34 @@ def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legisla
         section_with_prefix = f"{legislation_title} {entry['section_number']} {entry['title']}"
         full_reference = f"{legislation_title} {entry['section_number']} {entry['title']}"
         
+        # Measure LLM processing time
+        start_llm_time = time.time()
+
+        # Extract keywords using LLM
+        keywords, categories = extract_keywords_with_llm(markdown_text, TAX_KEYWORDS)
+
+        # Calculate and print LLM processing time
+        llm_processing_time = time.time() - start_llm_time
+        print(f"LLM processing time for keywords extraction: {llm_processing_time:.2f} seconds")
+
+        # Adjust section to legislation + section numbering only
+        section_number_only = f"{legislation_title} {entry['section_number']}"
+
+        # Prepend full reference to text
+        markdown_text_with_ref = f"{full_reference}\n\n{markdown_text}"
+
+        chunk_metadata = {
+            "keywords": list(keywords),
+            "categories": list(categories),
+            "full_reference": full_reference,
+            "source_file": docx_filename or "unknown",
+            "creation_date": current_datetime or datetime.now().isoformat()
+        }
+
         chunks.append({
-            "section": section_with_prefix,
-            "text": markdown_text,
-            "metadata": {
-                "full_reference": full_reference,
-                "source_file": docx_filename or "unknown",
-                "creation_date": current_datetime or datetime.now().isoformat()
-            }
+            "section": section_number_only,
+            "text": markdown_text_with_ref,
+            "metadata": chunk_metadata
         })
     
     # Add debug but remove CSV generation code
@@ -357,7 +546,7 @@ def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legisla
     # Return the chunks without writing CSV
     return chunks
 
-def write_individual_summary_log(log_file, docx_filename, toc_total, matches, chunks_count, time_taken):
+def write_individual_summary_log(log_file, docx_filename, toc_total, matches, chunks_count, time_taken, chunks=None):
     """Write an individual summary log for a DOCX file."""
     # Convert time_taken to hours, minutes, and seconds
     hours, rem = divmod(time_taken, 3600)
@@ -375,6 +564,12 @@ def write_individual_summary_log(log_file, docx_filename, toc_total, matches, ch
         f.write(f"Headers NOT Matched: {unmatched}\n")
         f.write(f"Chunks produced: {chunks_count}\n")
         f.write(f"Time taken: {int(hours)}h {int(minutes)}m {int(seconds)}s\n")
+        
+        # Only calculate keywords if chunks are provided
+        if chunks:
+            f.write(f"Keywords extracted: {sum(len(chunk['metadata']['keywords']) for chunk in chunks)}\n")
+        else:
+            f.write("Keywords extracted: Not calculated\n")
 
 def write_chunks_to_csv(chunks, output_file):
     """Write all chunks to a CSV file."""
@@ -389,7 +584,7 @@ def write_chunks_to_csv(chunks, output_file):
     try:
         rows_written = 0
         with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['section', 'text', 'full_reference', 'source_file', 'creation_date']
+            fieldnames = ['section', 'text', 'full_reference', 'source_file', 'creation_date', 'keywords']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             
@@ -400,7 +595,8 @@ def write_chunks_to_csv(chunks, output_file):
                         'text': chunk['text'],
                         'full_reference': chunk['metadata']['full_reference'],
                         'source_file': chunk['metadata']['source_file'],
-                        'creation_date': chunk['metadata']['creation_date']
+                        'creation_date': chunk['metadata']['creation_date'],
+                        'keywords': ', '.join(chunk['metadata']['keywords'])
                     }
                     writer.writerow(row)
                     rows_written += 1
@@ -412,6 +608,22 @@ def write_chunks_to_csv(chunks, output_file):
     except Exception as e:
         print(f"Error writing CSV file: {str(e)}")
         return False
+
+def setup_file_logger(docx_filename, overall_dt_string):
+    """Set up a specific logger for a DOCX file."""
+    # Remove any existing file handlers (except main handler)
+    logger = logging.getLogger()
+    for handler in logger.handlers[:]:
+        if isinstance(handler, logging.FileHandler) and handler.baseFilename != MAIN_LOG_FILE_NAME:
+            logger.removeHandler(handler)
+    
+    # Create a new file handler for this DOCX file
+    log_file_name = os.path.join(LOG_DIR, f"log_{docx_filename}_{overall_dt_string}.txt")
+    file_handler = logging.FileHandler(log_file_name)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+    
+    return log_file_name
 
 def main():
     # Track overall start time
@@ -425,7 +637,7 @@ def main():
     logging.info("Starting the law document chunking pipeline.")
     
     # Directory containing the JSON files and checkpoint file
-    checkpoint_path = os.path.join(LOG_DIR, "chunking_law_checkpoint.txt")  # Store checkpoint in log directory
+    checkpoint_path = os.path.join(LOG_DIR, "chunking_law_checkpoint.txt")
     processed_files = []  # Track successfully processed files
     failed_files = []     # Track failed files
     time_per_file = {}    # Track processing time for each file
@@ -446,6 +658,12 @@ def main():
             except Exception as e:
                 logging.error(f"Error reading checkpoint file: {e}")
 
+    # Ask if user wants to run in test mode (process only first 20 chunks)
+    test_mode = input("Run in test mode (process only first 20 chunks)? (yes/no): ").strip().lower() == 'yes'
+    if test_mode:
+        logging.info("TEST MODE ACTIVE: Processing only the first 20 chunks.")
+        print("\n*** TEST MODE ENABLED - Only processing first 20 chunks ***\n")
+
     try:
         docx_files = get_all_docx_files(LOCAL_DIR)
         if not docx_files:
@@ -455,7 +673,7 @@ def main():
         print(f"Found {len(docx_files)} DOCX files to process")
         json_dir = os.path.join(LOCAL_DIR, "json")
         os.makedirs(json_dir, exist_ok=True)
-        overall_dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        overall_dt_string = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         for docx_index, docx_path in enumerate(docx_files, 1):
             file_start = time.time()  # Start timing for this DOCX file
@@ -469,6 +687,10 @@ def main():
             print(f"Time elapsed since start: {int(hours)}h {int(minutes)}m {int(seconds)}s")
             docx_filename = docx_path.name
             
+            # Set up a unique log file for each DOCX file
+            log_file_name = setup_file_logger(docx_filename, overall_dt_string)
+            logging.info(f"Processing file: {docx_filename}")
+            
             try:
                 # Open the document
                 doc = docx.Document(str(docx_path))
@@ -481,7 +703,6 @@ def main():
                         legislation_title = doc.paragraphs[i].text.strip()
                         break
                 
-                logging.info(f"Processing file: {docx_filename}")
                 logging.info(f"Legislation title: {legislation_title}")
                 
                 toc_entries = clean_and_parse_toc_from_doc(doc)
@@ -545,6 +766,9 @@ def main():
                 
                 print(f"\nFINAL SUMMARY: Matched {match_counter} out of {toc_total} total sections")
                 
+                # Log summary of TOC matching to the per-DOCX log file
+                logging.info(f"TOC MATCHING SUMMARY: Successfully matched {match_counter} out of {toc_total} TOC entries ({(match_counter/toc_total)*100:.1f}%)")
+                
                 header_indices.sort(key=lambda x: x[0])
                 chunks = []
                 for i, (start_idx, entry) in enumerate(header_indices):
@@ -567,14 +791,34 @@ def main():
                     section_with_prefix = f"{legislation_title} {entry['section_number']} {entry['title']}"
                     full_reference = f"{legislation_title} {entry['section_number']} {entry['title']}"
                     
+                    # Measure LLM processing time
+                    start_llm_time = time.time()
+
+                    # Extract keywords using LLM
+                    keywords, categories = extract_keywords_with_llm(markdown_text, TAX_KEYWORDS)
+
+                    # Calculate and print LLM processing time
+                    llm_processing_time = time.time() - start_llm_time
+                    print(f"LLM processing time for keywords extraction: {llm_processing_time:.2f} seconds")
+
+                    # Adjust section to legislation + section numbering only
+                    section_number_only = f"{legislation_title} {entry['section_number']}"
+
+                    # Prepend full reference to text
+                    markdown_text_with_ref = f"{full_reference}\n\n{markdown_text}"
+
+                    chunk_metadata = {
+                        "keywords": list(keywords),
+                        "categories": list(categories),
+                        "full_reference": full_reference,
+                        "source_file": docx_filename,
+                        "creation_date": datetime.now().isoformat()
+                    }
+
                     chunks.append({
-                        "section": section_with_prefix,
-                        "text": markdown_text,
-                        "metadata": {
-                            "full_reference": full_reference,
-                            "source_file": docx_filename,
-                            "creation_date": datetime.now().isoformat()
-                        }
+                        "section": section_number_only,
+                        "text": markdown_text_with_ref,
+                        "metadata": chunk_metadata
                     })
                 
                 chunks_count = len(chunks)
@@ -584,7 +828,11 @@ def main():
                 docx_name = os.path.splitext(docx_filename)[0].replace(" ", "_").replace("-", "_")
                 dt_string = datetime.now().strftime('%Y%m%d_%H%M%S')
                 json_files_counter = 0
-                for chunk in chunks:
+                
+                # If in test mode, only process the first 20 chunks
+                chunks_to_process = chunks[:20] if test_mode else chunks
+                
+                for chunk in chunks_to_process:
                     full_reference = chunk["metadata"]["full_reference"]
                     parts = full_reference.split()
                     
@@ -609,12 +857,23 @@ def main():
                         json_filename = f"{doc_prefix}_{safe_section}_{json_files_counter}_{docx_name}_{dt_string}.json"
                     
                     json_output_file = os.path.join(json_dir, json_filename)
-                    with open(json_output_file, "w", encoding="utf-8") as f:
-                        import json
-                        json.dump(chunk, f, indent=2)
+                    try:
+                        with open(json_output_file, "w", encoding="utf-8") as f:
+                            json.dump(chunk, f, indent=2)
+                        logging.info(f"Successfully saved JSON file: {json_output_file}")
+                    except Exception as e:
+                        logging.error(f"Failed to save JSON file {json_output_file}: {str(e)}")
                     json_files_counter += 1
                     print(f"Chunk for section {section_number} saved to {json_filename}")
-                print(f"Wrote {json_files_counter} actual JSON files out of {len(chunks)} chunks")
+                    
+                    # Add debug output to show keywords for each JSON file in test mode
+                    if test_mode:
+                        print(f"Keywords for this chunk: {chunk['metadata']['keywords']}")
+                
+                if test_mode:
+                    print(f"\n*** TEST MODE: Processed {json_files_counter} chunks out of {len(chunks)} total chunks ***")
+                else:
+                    print(f"Wrote {json_files_counter} actual JSON files out of {len(chunks)} chunks")
                 
                 # Write a CSV with all chunks
                 csv_filename = f"{doc_prefix}_{docx_name}_{dt_string}.csv"
@@ -631,7 +890,7 @@ def main():
 
                 summary_filename = f"{docx_name}_summary_{dt_string}.txt"
                 summary_log_path = os.path.join(json_dir, summary_filename)
-                write_individual_summary_log(summary_log_path, docx_filename, len(toc_entries), match_counter, chunks_count, elapsed)
+                write_individual_summary_log(summary_log_path, docx_filename, len(toc_entries), match_counter, chunks_count, elapsed, chunks)
 
                 # Update the console output with both file time and overall time
                 print(f"Completed processing {docx_filename} in {int(hours)}h {int(minutes)}m {int(seconds)}s")
