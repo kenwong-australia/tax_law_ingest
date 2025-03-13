@@ -519,7 +519,7 @@ def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legisla
         print(f"LLM processing time for keywords extraction: {llm_processing_time:.2f} seconds")
 
         # Adjust section to legislation + section numbering only
-        section_number_only = f"{legislation_title} {entry['section_number']}"
+        section_number_only = entry['section_number']
 
         # Prepend full reference to text
         markdown_text_with_ref = f"{full_reference}\n\n{markdown_text}"
@@ -802,7 +802,7 @@ def main():
                     print(f"LLM processing time for keywords extraction: {llm_processing_time:.2f} seconds")
 
                     # Adjust section to legislation + section numbering only
-                    section_number_only = f"{legislation_title} {entry['section_number']}"
+                    section_number_only = entry['section_number']
 
                     # Prepend full reference to text
                     markdown_text_with_ref = f"{full_reference}\n\n{markdown_text}"
@@ -824,7 +824,6 @@ def main():
                 chunks_count = len(chunks)
                 
                 # Save each chunk as individual JSON files
-                doc_prefix = legislation_title.replace(" ", "_")
                 docx_name = os.path.splitext(docx_filename)[0].replace(" ", "_").replace("-", "_")
                 dt_string = datetime.now().strftime('%Y%m%d_%H%M%S')
                 json_files_counter = 0
@@ -848,13 +847,13 @@ def main():
                     
                     safe_section = section_number.replace(".", "_").replace("-", "_")
                     
-                    # Generate unique filename
-                    json_filename = f"{doc_prefix}_{safe_section}_{docx_name}_{dt_string}.json"
+                    # Generate unique filename starting with section number
+                    json_filename = f"{safe_section}_{docx_name}_{dt_string}.json"
                     
                     # Check if this filename already exists
                     if os.path.exists(os.path.join(json_dir, json_filename)):
                         # Add a suffix to make it unique
-                        json_filename = f"{doc_prefix}_{safe_section}_{json_files_counter}_{docx_name}_{dt_string}.json"
+                        json_filename = f"{safe_section}_{json_files_counter}_{docx_name}_{dt_string}.json"
                     
                     json_output_file = os.path.join(json_dir, json_filename)
                     try:
@@ -876,7 +875,7 @@ def main():
                     print(f"Wrote {json_files_counter} actual JSON files out of {len(chunks)} chunks")
                 
                 # Write a CSV with all chunks
-                csv_filename = f"{doc_prefix}_{docx_name}_{dt_string}.csv"
+                csv_filename = f"{docx_name}_{dt_string}.csv"
                 csv_output_file = os.path.join(json_dir, csv_filename)
                 write_chunks_to_csv(chunks, csv_output_file)
                 print(f"All chunks saved in CSV format to {csv_output_file}")
