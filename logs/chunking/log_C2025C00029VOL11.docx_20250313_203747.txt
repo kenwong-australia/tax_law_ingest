@@ -1,0 +1,2 @@
+2025-03-13 21:06:16,096 - INFO - Processing file: C2025C00029VOL11.docx
+2025-03-13 21:06:16,137 - INFO - Legislation title: Income Tax Assessment Act 1997

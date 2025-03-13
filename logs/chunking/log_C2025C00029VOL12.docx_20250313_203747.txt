@@ -1,0 +1,10 @@
+2025-03-13 21:47:44,530 - INFO - Processing file: C2025C00029VOL12.docx
+2025-03-13 21:47:44,669 - INFO - Legislation title: Income Tax Assessment Act 1997
+2025-03-13 21:47:44,764 - INFO - TOC MATCHING SUMMARY: Successfully matched 1 out of 1 TOC entries (100.0%)
+2025-03-13 21:47:45,844 - INFO - Raw keywords response: Deductions, Property, Taxation Administration Act 1953
+2025-03-13 21:47:45,845 - INFO - Raw keywords after splitting: ['Deductions', 'Property', 'Taxation Administration Act 1953']
+2025-03-13 21:47:45,845 - INFO - Matched keyword 'Deductions' under category 'Income tax'
+2025-03-13 21:47:45,845 - INFO - Matched keyword 'Property' under category 'Goods and services tax (GST)'
+2025-03-13 21:47:45,846 - INFO - Matched keyword 'Taxation Administration Act 1953' under category 'Goods and services tax (GST)'
+2025-03-13 21:47:45,846 - INFO - FINAL KEYWORDS: 3 keywords: ['Deductions', 'Property', 'Taxation Administration Act 1953']
+2025-03-13 21:47:45,848 - INFO - Successfully saved JSON file: /Users/kenmacpro/pinecone-upsert/testfiles_law/json/Income_Tax_Assessment_Act_1997_Assessment_C2025C00029VOL12_20250313_214745.json
