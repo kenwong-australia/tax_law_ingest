@@ -182,7 +182,8 @@ def clean_and_parse_toc_from_doc(doc):
             # If line looks like a TOC entry, add it
             toc_text.append(text)
     
-    section_pattern = r'^\s*(?:(\d+(?:-\d+)?)|\s*(\d+[A-Z]+))\s+(.*?)(?:\s*\.{2,}|\s*$)'
+    # Updated pattern to better handle page numbers
+    section_pattern = r'^\s*(?:(\d+(?:-\d+)?)|\s*(\d+[A-Z]+))\s+(.*?)(?:\s*\.{2,}|\s*)(?:\t|\s+)(\d+)?$'
     skip_keywords = ("part", "division", "subdivision", "chapter", "guide", "operative provisions")
     
     # Process each line in the TOC
@@ -208,7 +209,7 @@ def clean_and_parse_toc_from_doc(doc):
         
         match = re.match(section_pattern, line)
         if match:
-            section1, section2, title = match.groups()
+            section1, section2, title, page_number = match.groups()
             section_number = section1 if section1 else section2
             
             # Skip duplicate section numbers
@@ -217,9 +218,13 @@ def clean_and_parse_toc_from_doc(doc):
                 
             section_numbers_seen.add(section_number)
             
+            # Clean the title of tabs, extra whitespace, and page numbers
+            clean_title = re.sub(r'\s+', ' ', title.strip())
+            
             toc_entries.append({
                 'section_number': section_number,
-                'title': title.strip()
+                'title': clean_title,
+                'page_number': page_number  # Store page number separately if needed
             })
     
     return toc_entries
@@ -228,15 +233,16 @@ def write_toc_entries(toc_entries, output_file):
     """Write cleaned TOC entries to a file for inspection."""
     with open(output_file, "w", encoding="utf-8") as f:
         for entry in toc_entries:
-            f.write(f'{entry["section_number"]}\t{entry["title"]}\n')
+            # Include page number in the output file for debugging
+            page_info = f" (Page {entry['page_number']})" if entry['page_number'] else ""
+            f.write(f'{entry["section_number"]}\t{entry["title"]}{page_info}\n')
 
 def find_header_paragraph_index(doc, start_index, header, threshold=70):
-    """
-    Find the paragraph index in the document that matches the given header.
-    Uses fuzzy matching to account for formatting differences.
-    """
+    """Find the paragraph index in the document that matches the given header."""
     debug_print(f"Searching for header: '{header}'")
-    parts = header.split("  ", 1)
+    
+    # More flexible header splitting - handle various spacing
+    parts = [p.strip() for p in re.split(r'\s{2,}', header, maxsplit=1)]
     if len(parts) != 2:
         debug_print(f"Header format is unexpected: '{header}'")
         return -1
@@ -244,11 +250,19 @@ def find_header_paragraph_index(doc, start_index, header, threshold=70):
     section_number, title = parts[0].strip(), parts[1].strip()
     debug_print(f"Looking for section '{section_number}' with title '{title}'")
     
+    # Clean section number for comparison
+    clean_section = re.sub(r'\s+', '', section_number)
+    
     for i in range(start_index, len(doc.paragraphs)):
         p = doc.paragraphs[i]
         text = p.text.strip()
         
-        if text.startswith(section_number + " ") or text == section_number:
+        # Clean paragraph text section number for comparison
+        text_clean = re.sub(r'\s+', '', text)
+        
+        # More flexible section number matching
+        if (text_clean.startswith(clean_section) or 
+            clean_section in text_clean[:len(clean_section) + 2]):  # Allow slight variation
             debug_print(f"Found section number match at paragraph {i}: '{text}'")
             header_parts = re.split(r'\s{2,}', text)
             if len(header_parts) >= 2:
@@ -258,8 +272,10 @@ def find_header_paragraph_index(doc, start_index, header, threshold=70):
                 if title_score >= threshold:
                     debug_print(f"✓ MATCH: Section {section_number} at paragraph {i}")
                     return i
-            debug_print(f"Found section number but title match below threshold. Returning as fallback.")
-            return i
+            # Only use section number as fallback if we're really confident about the match
+            elif text_clean == clean_section:
+                debug_print(f"Found exact section number match at paragraph {i}")
+                return i
     
     debug_print(f"✗ No match found for section '{section_number}'")
     return -1
@@ -302,7 +318,11 @@ def text_to_markdown(paragraphs, start_idx, end_idx, section_number, section_tit
     
     return "".join(markdown_lines)
 
-def extract_keywords_with_llm(text, keyword_library):
+def extract_keywords_with_llm(text, keyword_library, section_number=None, source_file=None):
+    # Log section and source information
+    if section_number and source_file:
+        logging.info(f"\nProcessing Section {section_number} from {source_file}")
+    
     prompt = f"""
     Extract relevant keywords from the following text based on the provided keyword library.
 
@@ -322,7 +342,7 @@ def extract_keywords_with_llm(text, keyword_library):
         try:
             # Attempt to call the OpenAI API
             response = openai.ChatCompletion.create(
-                model="gpt-4o",
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=100,
@@ -512,7 +532,7 @@ def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legisla
         start_llm_time = time.time()
 
         # Extract keywords using LLM
-        keywords, categories = extract_keywords_with_llm(markdown_text, TAX_KEYWORDS)
+        keywords, categories = extract_keywords_with_llm(markdown_text, TAX_KEYWORDS, entry['section_number'], docx_filename)
 
         # Calculate and print LLM processing time
         llm_processing_time = time.time() - start_llm_time
@@ -795,7 +815,7 @@ def main():
                     start_llm_time = time.time()
 
                     # Extract keywords using LLM
-                    keywords, categories = extract_keywords_with_llm(markdown_text, TAX_KEYWORDS)
+                    keywords, categories = extract_keywords_with_llm(markdown_text, TAX_KEYWORDS, entry['section_number'], docx_filename)
 
                     # Calculate and print LLM processing time
                     llm_processing_time = time.time() - start_llm_time
@@ -832,19 +852,10 @@ def main():
                 chunks_to_process = chunks[:20] if test_mode else chunks
                 
                 for chunk in chunks_to_process:
-                    full_reference = chunk["metadata"]["full_reference"]
-                    parts = full_reference.split()
+                    # Use the section field directly from the chunk
+                    section_number = chunk["section"]
                     
-                    # Proper extraction of section number - it's the part after legislation title
-                    if len(parts) >= 3 and parts[0] == legislation_title.split()[0] and parts[1] == legislation_title.split()[1]:
-                        section_number = parts[2]  # The actual section number (like "6AB")
-                    else:
-                        # Fallback if we can't extract properly
-                        section_number = f"section_{json_files_counter}"
-                    
-                    print(f"Full reference: '{full_reference}'")    
-                    print(f"Using section number: '{section_number}' for file")
-                    
+                    # Make the section number safe for filenames
                     safe_section = section_number.replace(".", "_").replace("-", "_")
                     
                     # Generate unique filename starting with section number
