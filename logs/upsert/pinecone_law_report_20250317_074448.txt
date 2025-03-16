@@ -1,0 +1,21 @@
+Law Pinecone Indexing Report - Generated on 2025-03-17 07:44:48
+FULL MODE
+Total .json files processed: 2
+Successfully upserted: 0
+Failed to upsert: 2
+All files upserted? NO
+Total execution time: 0h 0m 32s
+
+Time taken per file:
+
+List of failed files:
+  - 165_115_Part1_C2025C00029VOL04_20250314_221654.json: Error processing file 165_115_Part1_C2025C00029VOL04_20250314_221654.json: (400)
+Reason: Bad Request
+HTTP response headers: HTTPHeaderDict({'Date': 'Sun, 16 Mar 2025 20:44:35 GMT', 'Content-Type': 'application/json', 'Content-Length': '115', 'Connection': 'keep-alive', 'x-pinecone-request-latency-ms': '836', 'x-pinecone-request-id': '994328148954572366', 'x-envoy-upstream-service-time': '18', 'server': 'envoy'})
+HTTP response body: {"code":3,"message":"Metadata size is 48430 bytes, which exceeds the limit of 40960 bytes per vector","details":[]}
+
+  - 165_115_Part2_C2025C00029VOL04_20250314_221654.json: Error processing file 165_115_Part2_C2025C00029VOL04_20250314_221654.json: (400)
+Reason: Bad Request
+HTTP response headers: HTTPHeaderDict({'Date': 'Sun, 16 Mar 2025 20:44:48 GMT', 'Content-Type': 'application/json', 'Content-Length': '115', 'Connection': 'keep-alive', 'x-pinecone-request-latency-ms': '188', 'x-pinecone-request-id': '5103466407334620639', 'x-envoy-upstream-service-time': '1', 'server': 'envoy'})
+HTTP response body: {"code":3,"message":"Metadata size is 45422 bytes, which exceeds the limit of 40960 bytes per vector","details":[]}
+

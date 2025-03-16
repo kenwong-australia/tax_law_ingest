@@ -29,7 +29,7 @@ VECTOR_DIMENSION = 3072  # Embedding dimension for "text-embedding-3-large"
 LOCAL_JSON_DIR = os.getenv("LOCAL_JSON_DIR", "/Users/kenmacpro/pinecone-upsert/testfiles_law/json")
 
 # Create local log directory
-LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs"
+LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs/upsert"
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # Set up logging with timestamp
@@ -101,15 +101,30 @@ def get_embedding(text: str, model="text-embedding-3-large") -> list:
 # Main Upsert Logic
 # -----------------------------
 def main():
+    # Ask user if they want to run in test mode
+    test_mode = False
+    while True:
+        user_input = input("Do you want to run in test mode (only process 10 records)? (yes/no): ").lower().strip()
+        if user_input in ['yes', 'y']:
+            test_mode = True
+            break
+        elif user_input in ['no', 'n']:
+            test_mode = False
+            break
+        else:
+            print("Please enter 'yes' or 'no'.")
+
     # Track overall start time
     overall_start_time = time.time()
     
     # Print welcome banner
     print("\n" + "=" * 80)
     print(" " * 30 + "LAW DOCUMENT PINECONE INDEXING")
+    if test_mode:
+        print(" " * 35 + "TEST MODE (10 RECORDS)")
     print("=" * 80 + "\n")
     
-    logging.info("Starting the law document Pinecone indexing.")
+    logging.info(f"Starting the law document Pinecone indexing.{' (TEST MODE - 10 records)' if test_mode else ''}")
     
     # Directory containing the JSON files and checkpoint file
     checkpoint_path = os.path.join(LOG_DIR, "pinecone_law_checkpoint.txt")  # Store checkpoint in log directory
@@ -134,6 +149,12 @@ def main():
     json_files = sorted([f for f in os.listdir(LOCAL_JSON_DIR) if f.lower().endswith('.json')])
     total_files = len(json_files)
     logging.info(f"Found {total_files} JSON file(s) to process.")
+
+    # In test mode, only process up to 10 files
+    if test_mode and total_files > 10:
+        json_files = json_files[:10]
+        total_files = 10
+        logging.info(f"Test mode: Limited to processing 10 files.")
 
     # Process JSON files
     for file_idx, file_name in enumerate(json_files, start=1):
@@ -247,6 +268,9 @@ def main():
                 "full_reference": meta.get("full_reference", ""),
                 # Look for creation_date first, then fall back to upsert_date for backward compatibility
                 "creation_date": meta.get("creation_date", meta.get("upsert_date", "")),
+                # Add keywords and categories from metadata
+                "keywords": meta.get("keywords", []),
+                "categories": meta.get("categories", []),
                 # Add a Pinecone-specific upsert timestamp
                 "pinecone_upsert_date": datetime.datetime.now().isoformat()
             }
@@ -336,6 +360,7 @@ def main():
     with open(report_path, "w", encoding="utf-8") as report_file:
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         report_file.write(f"Law Pinecone Indexing Report - Generated on {current_time}\n")
+        report_file.write(f"{'TEST MODE (10 records)' if test_mode else 'FULL MODE'}\n")
         report_file.write(f"Total .json files processed: {total_files}\n")
         report_file.write(f"Successfully upserted: {len(processed_files)}\n")
         report_file.write(f"Failed to upsert: {len(failed_files)}\n")
