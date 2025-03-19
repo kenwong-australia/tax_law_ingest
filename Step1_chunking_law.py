@@ -544,8 +544,14 @@ def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legisla
         # Prepend full reference to text
         markdown_text_with_ref = f"{full_reference}\n\n{markdown_text}"
 
+        # Add section number to keywords list
+        keywords_with_section = list(keywords)
+        if section_number_only not in keywords_with_section:
+            keywords_with_section.append(section_number_only)
+            logging.info(f"Added section number '{section_number_only}' to keywords")
+
         chunk_metadata = {
-            "keywords": list(keywords),
+            "keywords": keywords_with_section,
             "categories": list(categories),
             "full_reference": full_reference,
             "source_file": docx_filename or "unknown",
@@ -827,8 +833,14 @@ def main():
                     # Prepend full reference to text
                     markdown_text_with_ref = f"{full_reference}\n\n{markdown_text}"
 
+                    # Add section number to keywords list
+                    keywords_with_section = list(keywords)
+                    if section_number_only not in keywords_with_section:
+                        keywords_with_section.append(section_number_only)
+                        logging.info(f"Added section number '{section_number_only}' to keywords")
+
                     chunk_metadata = {
-                        "keywords": list(keywords),
+                        "keywords": keywords_with_section,
                         "categories": list(categories),
                         "full_reference": full_reference,
                         "source_file": docx_filename,

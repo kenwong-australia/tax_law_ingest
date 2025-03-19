@@ -57,6 +57,58 @@ DEBUG = True
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds
 
+# Maximum metadata size (in bytes) - Pinecone limit is 40KB
+MAX_METADATA_SIZE = 38000  # Leave 2KB buffer for safety
+
+
+# Function to split large text into chunks
+def chunk_large_text(text, max_chunk_size=30000, overlap=50):
+    """
+    Split text into chunks with overlap for sections that exceed Pinecone's metadata size limit.
+    
+    Args:
+        text: The text to chunk
+        max_chunk_size: Maximum size in bytes per chunk
+        overlap: Number of words to overlap between chunks for context
+    
+    Returns:
+        list: List of text chunks
+    """
+    # Check if we need to split at all
+    if len(text.encode('utf-8')) <= max_chunk_size:
+        return [text]
+        
+    chunks = []
+    words = text.split()
+    current_chunk = []
+    current_size = 0
+    
+    for word in words:
+        # Add space to the word for size calculation
+        word_with_space = word + " "
+        word_size = len(word_with_space.encode('utf-8'))
+        
+        # If adding this word would exceed the limit
+        if current_size + word_size > max_chunk_size and current_chunk:
+            # Save current chunk
+            chunks.append(" ".join(current_chunk))
+            
+            # Keep overlap words for context
+            overlap_start = max(0, len(current_chunk) - overlap)
+            current_chunk = current_chunk[overlap_start:]
+            current_size = sum(len((w + " ").encode('utf-8')) for w in current_chunk)
+        
+        # Add the word to the current chunk
+        current_chunk.append(word)
+        current_size += word_size
+    
+    # Add the last chunk if not empty
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    
+    return chunks
+
+
 # -----------------------------
 # Pinecone Initialization
 # -----------------------------
@@ -211,59 +263,21 @@ def main():
             # Or you can store it for both, but presumably, legislation doesn't have one
             url = data.get("url") or meta.get("url")
 
-            # Combine identification + text for embedding
-            embed_parts = []
-            if source == "legislation" and section:
-                embed_parts.append(section)
-            elif source == "ato_ruling" and title:
-                embed_parts.append(title)
-            # Always append the chunk text
-            embed_parts.append(text_data)
+            # ID for Pinecone: section if legislation, else title or fallback to file name
+            if source == "legislation":
+                vector_id = section if section else file_name
+            else:
+                vector_id = title if title else file_name
 
-            embedding_input = "\n\n".join(embed_parts)
+            # Sanitize the vector ID
+            vector_id = vector_id.replace(" ", "_").encode("ascii", "ignore").decode()
 
-            # Truncate if needed before sending to OpenAI
-            try:
-                safe_input, token_count = truncate_to_token_limit(embedding_input)
-                logging.info(f"Input has {token_count} tokens for {file_name}")
-                
-                # Track if truncation happened
-                original_token_count = len(tiktoken.encoding_for_model("text-embedding-3-large").encode(embedding_input))
-                if original_token_count > token_count:
-                    logging.warning(f"Truncated {file_name} from {original_token_count} to {token_count} tokens")
-                
-                # Add retry logic specific to embedding
-                for attempt in range(MAX_RETRIES):
-                    try:
-                        embedding = get_embedding(safe_input)
-                        break  # Success, exit retry loop
-                    except Exception as e:
-                        logging.error(f"Embedding failed on attempt {attempt+1}: {str(e)}")
-                        if "RemoteDisconnected" in str(e) or "timeout" in str(e).lower():
-                            # If connection dropped, try with half the tokens
-                            if token_count > 1000:
-                                token_count = token_count // 2
-                                safe_input, _ = truncate_to_token_limit(
-                                    embedding_input, max_tokens=token_count
-                                )
-                                logging.warning(f"Retrying with reduced token count: {token_count}")
-                        
-                        if attempt == MAX_RETRIES - 1:
-                            raise  # Last attempt failed, re-raise
-                        time.sleep(RETRY_DELAY)  # Wait before retry
-            except Exception as e:
-                logging.error(f"Failed to get embedding for {file_name}: {str(e)}")
-                import traceback
-                logging.error(traceback.format_exc())
-                failed_files.append((file_name, str(e)))
-                continue  # Skip to next file
-
-            # Build metadata
-            pinecone_metadata = {
+            # Build metadata template (without the actual text content yet)
+            pinecone_metadata_template = {
                 "source": source,  
                 "section": section if source == "legislation" else "",
                 "title": title if source == "ato_ruling" else "",
-                "chunk_text": text_data,
+                # chunk_text will be added later
                 "source_file": meta.get("source_file", ""),
                 "full_reference": meta.get("full_reference", ""),
                 # Look for creation_date first, then fall back to upsert_date for backward compatibility
@@ -276,39 +290,158 @@ def main():
             }
 
             # Only store a "url" field if it's an ATO doc that actually has a URL
-            # (Alternatively, store it for both; just put None for legislation)
             if source == "ato_ruling":
-                pinecone_metadata["url"] = url if url else None
-
-            # ID for Pinecone: section if legislation, else title or fallback to file name
-            if source == "legislation":
-                vector_id = section if section else file_name
-            else:
-                vector_id = title if title else file_name
-
-            # Sanitize the vector ID
-            vector_id = vector_id.replace(" ", "_").encode("ascii", "ignore").decode()
+                pinecone_metadata_template["url"] = url if url else None
 
             # Determine namespace
-            namespace = determine_namespace(file_name, pinecone_metadata)
+            namespace = determine_namespace(file_name, pinecone_metadata_template)
 
-            # Upsert with retries
-            for attempt in range(MAX_RETRIES):
+            # Create a test metadata object with the full text to check size
+            test_metadata = pinecone_metadata_template.copy()
+            test_metadata["chunk_text"] = text_data
+            metadata_size = len(json.dumps(test_metadata).encode('utf-8'))
+            
+            # Check if metadata exceeds size limit
+            if metadata_size > MAX_METADATA_SIZE:
+                logging.info(f"Large section detected in {file_name}: {metadata_size/1024:.1f}KB exceeds limit. Splitting into chunks.")
+                
+                # Split the text into chunks
+                text_chunks = chunk_large_text(text_data)
+                logging.info(f"Split into {len(text_chunks)} chunks with overlap")
+                
+                # Process each chunk
+                chunk_count = len(text_chunks)
+                for i, chunk_text in enumerate(text_chunks, 1):
+                    # Create unique ID for this chunk
+                    chunk_id = f"{vector_id}_{i}of{chunk_count}"
+                    
+                    # Create metadata for this chunk
+                    chunk_metadata = pinecone_metadata_template.copy()
+                    chunk_metadata["chunk_text"] = chunk_text
+                    chunk_metadata["is_chunked"] = True
+                    chunk_metadata["chunk_number"] = i
+                    chunk_metadata["total_chunks"] = chunk_count
+                    
+                    # Combine identification + text for embedding
+                    embed_parts = []
+                    if source == "legislation" and section:
+                        embed_parts.append(section)
+                    elif source == "ato_ruling" and title:
+                        embed_parts.append(title)
+                    # Append this chunk's text
+                    embed_parts.append(chunk_text)
+                    
+                    chunk_embedding_input = "\n\n".join(embed_parts)
+                    
+                    # Get embedding for this chunk with retry logic
+                    try:
+                        safe_input, token_count = truncate_to_token_limit(chunk_embedding_input)
+                        
+                        for attempt in range(MAX_RETRIES):
+                            try:
+                                chunk_embedding = get_embedding(safe_input)
+                                break  # Success, exit retry loop
+                            except Exception as e:
+                                logging.error(f"Chunk embedding failed on attempt {attempt+1}: {str(e)}")
+                                if attempt == MAX_RETRIES - 1:
+                                    raise  # Last attempt failed, re-raise
+                                time.sleep(RETRY_DELAY)  # Wait before retry
+                    except Exception as e:
+                        logging.error(f"Failed to get embedding for chunk {i} of {chunk_count} in {file_name}: {str(e)}")
+                        continue  # Skip to next chunk
+                    
+                    # Upsert this chunk with retries
+                    for attempt in range(MAX_RETRIES):
+                        try:
+                            index.upsert([
+                                {
+                                    "id": chunk_id,
+                                    "values": chunk_embedding,
+                                    "metadata": chunk_metadata
+                                }
+                            ], namespace=namespace)
+                            logging.info(f"Upserted chunk {i} of {chunk_count} for {vector_id}")
+                            break  # Break if successful
+                        except Exception as e:
+                            logging.error(f"Chunk upsert failed on attempt {attempt + 1}: {e}")
+                            if attempt < MAX_RETRIES - 1:
+                                time.sleep(RETRY_DELAY)  # Wait before retrying
+                            else:
+                                raise  # Raise the exception if the last attempt fails
+                
+                # All chunks processed successfully
+                logging.info(f"Successfully processed all {chunk_count} chunks for {file_name}")
+                
+            else:
+                # Process normally for documents within size limit
+                # Combine identification + text for embedding
+                embed_parts = []
+                if source == "legislation" and section:
+                    embed_parts.append(section)
+                elif source == "ato_ruling" and title:
+                    embed_parts.append(title)
+                # Always append the chunk text
+                embed_parts.append(text_data)
+
+                embedding_input = "\n\n".join(embed_parts)
+
+                # Complete the metadata with the full text
+                pinecone_metadata = pinecone_metadata_template.copy()
+                pinecone_metadata["chunk_text"] = text_data
+                
+                # Truncate if needed before sending to OpenAI
                 try:
-                    index.upsert([
-                        {
-                            "id": vector_id,
-                            "values": embedding,
-                            "metadata": pinecone_metadata
-                        }
-                    ], namespace=namespace)
-                    break  # Break if successful
+                    safe_input, token_count = truncate_to_token_limit(embedding_input)
+                    logging.info(f"Input has {token_count} tokens for {file_name}")
+                    
+                    # Track if truncation happened
+                    original_token_count = len(tiktoken.encoding_for_model("text-embedding-3-large").encode(embedding_input))
+                    if original_token_count > token_count:
+                        logging.warning(f"Truncated {file_name} from {original_token_count} to {token_count} tokens")
+                    
+                    # Add retry logic specific to embedding
+                    for attempt in range(MAX_RETRIES):
+                        try:
+                            embedding = get_embedding(safe_input)
+                            break  # Success, exit retry loop
+                        except Exception as e:
+                            logging.error(f"Embedding failed on attempt {attempt+1}: {str(e)}")
+                            if "RemoteDisconnected" in str(e) or "timeout" in str(e).lower():
+                                # If connection dropped, try with half the tokens
+                                if token_count > 1000:
+                                    token_count = token_count // 2
+                                    safe_input, _ = truncate_to_token_limit(
+                                        embedding_input, max_tokens=token_count
+                                    )
+                                    logging.warning(f"Retrying with reduced token count: {token_count}")
+                            
+                            if attempt == MAX_RETRIES - 1:
+                                raise  # Last attempt failed, re-raise
+                            time.sleep(RETRY_DELAY)  # Wait before retry
                 except Exception as e:
-                    logging.error(f"Upsert failed for {file_name} on attempt {attempt + 1}: {e}")
-                    if attempt < MAX_RETRIES - 1:
-                        time.sleep(RETRY_DELAY)  # Wait before retrying
-                    else:
-                        raise  # Raise the exception if the last attempt fails
+                    logging.error(f"Failed to get embedding for {file_name}: {str(e)}")
+                    import traceback
+                    logging.error(traceback.format_exc())
+                    failed_files.append((file_name, str(e)))
+                    continue  # Skip to next file
+
+                # Upsert with retries
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        index.upsert([
+                            {
+                                "id": vector_id,
+                                "values": embedding,
+                                "metadata": pinecone_metadata
+                            }
+                        ], namespace=namespace)
+                        break  # Break if successful
+                    except Exception as e:
+                        logging.error(f"Upsert failed for {file_name} on attempt {attempt + 1}: {e}")
+                        if attempt < MAX_RETRIES - 1:
+                            time.sleep(RETRY_DELAY)  # Wait before retrying
+                        else:
+                            raise  # Raise the exception if the last attempt fails
 
             # Track success
             processed_files.append(file_name)
