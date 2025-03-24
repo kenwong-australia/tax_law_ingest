@@ -182,8 +182,9 @@ def clean_and_parse_toc_from_doc(doc):
             # If line looks like a TOC entry, add it
             toc_text.append(text)
     
-    # Updated pattern to better handle page numbers
-    section_pattern = r'^\s*(?:(\d+(?:-\d+)?)|\s*(\d+[A-Z]+))\s+(.*?)(?:\s*\.{2,}|\s*)(?:\t|\s+)(\d+)?$'
+    # Updated pattern to be more flexible with section number formats
+    # Simplified to not extract page numbers and allow more variations in section format
+    section_pattern = r'^\s*(?:(\d+(?:[.-]\d+)*[A-Z]*)|\s*(\d+[A-Z]+))\s+(.*?)(?:\s*\.{2,}|\s*\t|\s+\d+)?$'
     skip_keywords = ("part", "division", "subdivision", "chapter", "guide", "operative provisions")
     
     # Process each line in the TOC
@@ -209,7 +210,7 @@ def clean_and_parse_toc_from_doc(doc):
         
         match = re.match(section_pattern, line)
         if match:
-            section1, section2, title, page_number = match.groups()
+            section1, section2, title = match.groups()[:3]  # Only get first 3 groups, ignore page number
             section_number = section1 if section1 else section2
             
             # Skip duplicate section numbers
@@ -220,11 +221,12 @@ def clean_and_parse_toc_from_doc(doc):
             
             # Clean the title of tabs, extra whitespace, and page numbers
             clean_title = re.sub(r'\s+', ' ', title.strip())
+            clean_title = re.sub(r'\s*\.{2,}.*$', '', clean_title)  # Remove dots and page numbers
             
             toc_entries.append({
                 'section_number': section_number,
                 'title': clean_title,
-                'page_number': page_number  # Store page number separately if needed
+                'page_number': None  # No longer extracting page numbers
             })
     
     return toc_entries
@@ -237,7 +239,7 @@ def write_toc_entries(toc_entries, output_file):
             page_info = f" (Page {entry['page_number']})" if entry['page_number'] else ""
             f.write(f'{entry["section_number"]}\t{entry["title"]}{page_info}\n')
 
-def find_header_paragraph_index(doc, start_index, header, threshold=70):
+def find_header_paragraph_index(doc, start_index, header, threshold=60):
     """Find the paragraph index in the document that matches the given header."""
     debug_print(f"Searching for header: '{header}'")
     
@@ -473,7 +475,7 @@ def chunk_document_by_toc_paragraphs(doc, toc_entries, main_start_index, legisla
     for entry in toc_entries:
         expected_header = f"{entry['section_number']}  {entry['title']}"
         debug_print(f"Searching for header: '{expected_header}'")
-        idx = find_header_paragraph_index(doc, main_start_index, expected_header, threshold=70)
+        idx = find_header_paragraph_index(doc, main_start_index, expected_header, threshold=60)
         debug_print(f"Header search result: {idx}")
         if idx != -1:
             header_indices.append((idx, entry))
@@ -767,7 +769,7 @@ def main():
                         
                         expected_header = f"{entry['section_number']}  {entry['title']}"
                         print(f"Matching TOC entry {idx + 1}/{toc_total}: '{expected_header}' (starting at para {current_search_start}) [Time: {int(e_hours)}h {int(e_minutes)}m {int(e_seconds)}s]", end="", flush=True)
-                        idx_found = find_header_paragraph_index(doc, current_search_start, expected_header, threshold=70)
+                        idx_found = find_header_paragraph_index(doc, current_search_start, expected_header, threshold=60)
                         if idx_found != -1:
                             match_counter += 1
                             print(f" ✓ MATCH at paragraph {idx_found}")
@@ -780,7 +782,7 @@ def main():
                             r_minutes, r_seconds = divmod(r_rem, 60)
                             
                             print(f" ✗ NOT FOUND; retrying from TOC end... [Time: {int(r_hours)}h {int(r_minutes)}m {int(r_seconds)}s]", end="", flush=True)
-                            idx_found = find_header_paragraph_index(doc, main_start_index, expected_header, threshold=70)
+                            idx_found = find_header_paragraph_index(doc, main_start_index, expected_header, threshold=60)
                             if idx_found != -1:
                                 match_counter += 1
                                 print(f" ✓ MATCH at paragraph {idx_found}")
