@@ -440,6 +440,9 @@ def process_single_file(file_data):
         }
 
 def main():
+    # Declare MAX_FILES_TO_PROCESS as global to avoid UnboundLocalError
+    global MAX_FILES_TO_PROCESS
+    
     # Track overall start time
     overall_start_time = time.time()
     
