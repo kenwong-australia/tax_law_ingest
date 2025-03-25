@@ -347,9 +347,11 @@ def sanitize_filename(filename):
 
 def process_single_file(file_data):
     """Process a single file."""
-    file_name, file_index, total_files, start_index = file_data
+    file_name, file_index, total_files, start_index, checkpoint_path = file_data
     file_counter = start_index + file_index
     file_start_time = time.time()  # Track time for this file
+    
+    print(f"DEBUG: In process_single_file - total_files = {total_files}")  # Debug print
     
     progress_str = f"Processing file {file_index}/{total_files} [{file_counter}/{total_files}]: {file_name}"
     print("\n" + "-" * len(progress_str))
@@ -416,6 +418,14 @@ def process_single_file(file_data):
         # Calculate processing time
         file_duration = time.time() - file_start_time
         
+        # Update checkpoint after successful processing
+        try:
+            with open(checkpoint_path, "w") as cp:
+                cp.write(str(file_counter))
+            logging.info(f"Updated checkpoint to {file_counter}")
+        except Exception as e:
+            logging.error(f"Error writing to checkpoint file: {e}")
+        
         return {
             "status": "success",
             "file_name": file_name,
@@ -464,7 +474,13 @@ def main():
     reset_checkpoint = input("Do you want to reset the checkpoint? (yes/no): ").strip().lower()
     if reset_checkpoint == 'yes':
         start_index = 0
-        logging.info("Checkpoint reset to 0.")
+        # Immediately write 0 to the checkpoint file
+        try:
+            with open(checkpoint_path, "w") as cp:
+                cp.write("0")
+            logging.info("Checkpoint reset to 0 and checkpoint file updated.")
+        except Exception as e:
+            logging.error(f"Error writing to checkpoint file during reset: {e}")
     else:
         # Read checkpoint if it exists
         start_index = 0
@@ -482,6 +498,11 @@ def main():
         MAX_FILES_TO_PROCESS = 10
         logging.info("TEST MODE ACTIVE: Processing only the first 10 files.")
         print("\n*** TEST MODE ENABLED - Only processing first 10 files ***\n")
+    else:
+        # When not in test mode, set to process all remaining files
+        MAX_FILES_TO_PROCESS = 0  # 0 means no limit
+        logging.info("Processing all files in the input directory.")
+        print("\n*** FULL PROCESSING MODE - Processing all files ***\n")
     
     file_counter = start_index  # Set file counter to the starting index
     
@@ -494,6 +515,7 @@ def main():
 
         total_files = len(files)
         logging.info(f"Found {total_files} JSON files in {INPUT_DIR}")
+        print(f"DEBUG: total_files = {total_files}")  # Add debug print
         
         # Determine how many files to process
         files_to_process = files[start_index:]
@@ -504,7 +526,7 @@ def main():
             logging.info(f"Will process all {len(files_to_process)} remaining files")
 
         # Prepare file data for parallel processing
-        file_data_list = [(file_name, i, len(files_to_process), start_index) 
+        file_data_list = [(file_name, i, total_files, start_index, checkpoint_path) 
                           for i, file_name in enumerate(files_to_process, 1)]
         
         # Process files in parallel
@@ -535,13 +557,8 @@ def main():
                                                  result["file_size"], result["duration"], 
                                                  False, result["error"])
         
-        # Update checkpoint to the end of all processed files
-        file_counter = start_index + len(files_to_process)
-        try:
-            with open(checkpoint_path, "w") as cp:
-                cp.write(str(file_counter))
-        except Exception as e:
-            logging.error(f"Error writing to checkpoint file: {e}")
+        # We no longer need to update the checkpoint here since it's updated after each file is processed
+        # Note: The final checkpoint value will reflect the last file successfully processed
 
     except Exception as e:
         logging.error(f"Error accessing the directory: {e}")
@@ -557,6 +574,22 @@ def main():
     # Convert elapsed time to hours, minutes, and seconds
     hours, rem = divmod(total_duration, 3600)
     minutes, seconds = divmod(rem, 60)
+    
+    # Print file count details to help debug missing files
+    print("\n" + "=" * 80)
+    print(" " * 30 + "FILE COUNT DETAILS")
+    print("=" * 80)
+    print(f"Input directory: {INPUT_DIR}")
+    print(f"Output directory: {OUTPUT_DIR}")
+    print(f"Total JSON files in input directory: {total_files}")
+    print(f"Files processed in this run: {total_processed + total_failed}")
+    print(f"Successfully processed in this run: {total_processed}")
+    print(f"Failed in this run: {total_failed}")
+    print(f"Files remaining/skipped: {total_files - (file_counter - start_index)}")
+    if total_failed > 0:
+        print("\nFailed files:")
+        for file_name, error in failed_files:
+            print(f" - {file_name}: {error}")
     
     # Print final stats
     print("\n" + "=" * 80)
