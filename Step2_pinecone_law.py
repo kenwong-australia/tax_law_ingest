@@ -495,7 +495,15 @@ def main():
             dt_string = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             summary_filename = f"{file_name}_pinecone_summary_{dt_string}.txt"
             summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
-            write_individual_summary_log(summary_log_path, file_name, os.path.getsize(file_path), elapsed_time)
+            write_individual_summary_log(
+                summary_log_path, 
+                file_name, 
+                os.path.getsize(file_path), 
+                time.time() - file_start_time,  # This is the file-specific duration, not total elapsed time
+                vector_id=vector_id,
+                title=title,
+                section=section
+            )
 
         except Exception as e:
             error_msg = f"Error processing file {file_name}: {e}"
@@ -507,7 +515,17 @@ def main():
             summary_filename = f"{file_name}_pinecone_error_summary_{dt_string}.txt"
             summary_log_path = os.path.join(LOG_DIR, summary_filename)  # Save in log directory
             file_duration = time.time() - file_start_time
-            write_individual_summary_log(summary_log_path, file_name, os.path.getsize(file_path), file_duration, False, error_msg)
+            write_individual_summary_log(
+                summary_log_path, 
+                file_name, 
+                os.path.getsize(file_path), 
+                file_duration, 
+                False, 
+                error_msg,
+                vector_id=vector_id,
+                title=title,
+                section=section
+            )
             
         # Update checkpoint file after processing each file (successful or not)
         try:
@@ -580,15 +598,36 @@ def determine_namespace(file_name, data, doc_type):
     return None
 
 
-def write_individual_summary_log(filename, file_name, file_size, duration, success=True, error_msg=None):
+def write_individual_summary_log(filename, file_name, file_size, duration, success=True, error_msg=None, vector_id=None, title=None, section=None):
     with open(filename, "w", encoding="utf-8") as log_f:
         log_f.write("Summary of Pinecone Upsert\n")
         log_f.write("===========================\n")
         log_f.write(f"Timestamp: {datetime.datetime.now()}\n\n")
+        
+        # Include Pinecone ID
+        if vector_id:
+            log_f.write(f"Pinecone ID: {vector_id}\n")
+        
+        # Include title or section
+        if title:
+            log_f.write(f"Title: {title}\n")
+        if section and section != "":
+            log_f.write(f"Section: {section}\n")
+            
         log_f.write(f"File name: {file_name}\n")
         log_f.write(f"File size: {file_size} bytes\n")
         log_f.write(f"Success: {'YES' if success else 'NO'}\n")
-        log_f.write(f"Duration: {duration:.2f} seconds\n")
+        
+        # Format duration in a more readable way
+        hours, remainder = divmod(duration, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours > 0:
+            log_f.write(f"Duration: {int(hours)}h {int(minutes)}m {seconds:.2f}s\n")
+        elif minutes > 0:
+            log_f.write(f"Duration: {int(minutes)}m {seconds:.2f}s\n")
+        else:
+            log_f.write(f"Duration: {seconds:.2f}s\n")
+            
         if not success:
             log_f.write(f"Error: {error_msg}\n")
 
