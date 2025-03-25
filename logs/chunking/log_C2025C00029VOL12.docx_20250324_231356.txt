@@ -1,0 +1,36 @@
+2025-03-25 00:50:04,096 - INFO - Processing file: C2025C00029VOL12.docx
+2025-03-25 00:50:04,248 - INFO - Legislation title: Income Tax Assessment Act 1997
+2025-03-25 00:50:04,343 - INFO - TOC MATCHING SUMMARY: Successfully matched 2 out of 2 TOC entries (100.0%)
+2025-03-25 00:50:04,343 - INFO - 
+Processing Section 3 from C2025C00029VOL12.docx
+2025-03-25 00:50:05,599 - INFO - Raw keywords response: Income tax, Taxation Administration Act 1953, Tax obligations, Tax rates, Taxable income, Tax-free threshold, Taxpayer, Tax losses, Deductions, Business, Business deductions, Trusts, Trust income, Corporate tax rate, Australian Taxation Office (ATO)
+2025-03-25 00:50:05,599 - INFO - Raw keywords after splitting: ['Income tax', 'Taxation Administration Act 1953', 'Tax obligations', 'Tax rates', 'Taxable income', 'Tax-free threshold', 'Taxpayer', 'Tax losses', 'Deductions', 'Business', 'Business deductions', 'Trusts', 'Trust income', 'Corporate tax rate', 'Australian Taxation Office (ATO)']
+2025-03-25 00:50:05,600 - INFO - Matched keyword 'Income tax' under category 'Income tax'
+2025-03-25 00:50:05,600 - INFO - Matched keyword 'Taxation Administration Act 1953' under category 'Goods and services tax (GST)'
+2025-03-25 00:50:05,600 - INFO - Matched keyword 'Tax obligations' under category 'Income tax'
+2025-03-25 00:50:05,601 - INFO - Matched keyword 'Tax rates' under category 'Income tax'
+2025-03-25 00:50:05,601 - INFO - Matched keyword 'Taxable income' under category 'Income tax'
+2025-03-25 00:50:05,601 - INFO - Matched keyword 'Tax-free threshold' under category 'Income tax'
+2025-03-25 00:50:05,601 - INFO - Matched keyword 'Taxpayer' under category 'Income tax'
+2025-03-25 00:50:05,601 - INFO - Matched keyword 'Tax losses' under category 'Income tax'
+2025-03-25 00:50:05,601 - INFO - Matched keyword 'Deductions' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - Matched keyword 'Business' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - Matched keyword 'Business deductions' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - Matched keyword 'Trusts' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - Matched keyword 'Trust income' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - Matched keyword 'Corporate tax rate' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - Matched keyword 'Australian Taxation Office (ATO)' under category 'Income tax'
+2025-03-25 00:50:05,602 - INFO - FINAL KEYWORDS: 15 keywords: ['Australian Taxation Office (ATO)', 'Business', 'Business deductions', 'Corporate tax rate', 'Deductions', 'Income tax', 'Tax losses', 'Tax obligations', 'Tax rates', 'Tax-free threshold', 'Taxable income', 'Taxation Administration Act 1953', 'Taxpayer', 'Trust income', 'Trusts']
+2025-03-25 00:50:05,602 - INFO - Added section number '3' to keywords
+2025-03-25 00:50:05,603 - INFO - 
+Processing Section 26-99B from C2025C00029VOL12.docx
+2025-03-25 00:50:06,642 - INFO - Raw keywords response: Build to rent development misuse tax, Deductions, Income Tax Assessment Act (ITAA), Tax obligations, Taxpayer
+2025-03-25 00:50:06,642 - INFO - Raw keywords after splitting: ['Build to rent development misuse tax', 'Deductions', 'Income Tax Assessment Act (ITAA)', 'Tax obligations', 'Taxpayer']
+2025-03-25 00:50:06,643 - INFO - Matched keyword 'Deductions' under category 'Income tax'
+2025-03-25 00:50:06,643 - INFO - Matched keyword 'Income Tax Assessment Act (ITAA)' under category 'Income tax'
+2025-03-25 00:50:06,643 - INFO - Matched keyword 'Tax obligations' under category 'Income tax'
+2025-03-25 00:50:06,643 - INFO - Matched keyword 'Taxpayer' under category 'Income tax'
+2025-03-25 00:50:06,643 - INFO - FINAL KEYWORDS: 4 keywords: ['Deductions', 'Income Tax Assessment Act (ITAA)', 'Tax obligations', 'Taxpayer']
+2025-03-25 00:50:06,643 - INFO - Added section number '26-99B' to keywords
+2025-03-25 00:50:06,647 - INFO - Successfully saved JSON file: /Users/kenmacpro/pinecone-upsert/testfiles_law/json/3_C2025C00029VOL12_20250325_005006.json
+2025-03-25 00:50:06,648 - INFO - Successfully saved JSON file: /Users/kenmacpro/pinecone-upsert/testfiles_law/json/26_99B_C2025C00029VOL12_20250325_005006.json
