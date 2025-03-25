@@ -25,8 +25,12 @@ pinecone_env = os.getenv("PINECONE_ENV", "us-east-1-aws")
 index_name = os.getenv("PINECONE_INDEX", "legislation")
 VECTOR_DIMENSION = 3072  # Embedding dimension for "text-embedding-3-large"
 
-# Directory containing JSON files for either legislation or ATO rulings
-LOCAL_JSON_DIR = os.getenv("LOCAL_JSON_DIR", "/Users/kenmacpro/pinecone-upsert/testfiles_law/json")
+# Default directories for different document types
+ATO_JSON_DIR = os.getenv("ATO_JSON_DIR", "/Users/kenmacpro/pinecone-upsert/testfiles_cgt/output")
+LAW_JSON_DIR = os.getenv("LAW_JSON_DIR", "/Users/kenmacpro/pinecone-upsert/testfiles_law/json")
+
+# Local JSON directory will be set based on user choice
+LOCAL_JSON_DIR = ""
 
 # Create local log directory
 LOG_DIR = "/Users/kenmacpro/pinecone-upsert/logs/upsert"
@@ -153,6 +157,23 @@ def get_embedding(text: str, model="text-embedding-3-large") -> list:
 # Main Upsert Logic
 # -----------------------------
 def main():
+    global LOCAL_JSON_DIR
+    
+    # Ask user what type of documents to upsert
+    document_type_choice = ""
+    while document_type_choice not in ["ato", "law", "legislation"]:
+        document_type_choice = input("What type of documents do you want to upsert? (ato/legislation): ").strip().lower()
+        if document_type_choice == "law":
+            document_type_choice = "legislation"  # Normalize input
+    
+    # Set the appropriate directory based on the user's choice
+    if document_type_choice == "ato":
+        LOCAL_JSON_DIR = ATO_JSON_DIR
+        print(f"\nUsing ATO documents directory: {LOCAL_JSON_DIR}")
+    else:
+        LOCAL_JSON_DIR = LAW_JSON_DIR
+        print(f"\nUsing legislation documents directory: {LOCAL_JSON_DIR}")
+    
     # Ask user if they want to run in test mode
     test_mode = False
     while True:
@@ -171,15 +192,19 @@ def main():
     
     # Print welcome banner
     print("\n" + "=" * 80)
-    print(" " * 30 + "LAW DOCUMENT PINECONE INDEXING")
+    if document_type_choice == "ato":
+        print(" " * 30 + "ATO DOCUMENT PINECONE INDEXING")
+    else:
+        print(" " * 30 + "LAW DOCUMENT PINECONE INDEXING")
     if test_mode:
         print(" " * 35 + "TEST MODE (10 RECORDS)")
     print("=" * 80 + "\n")
     
-    logging.info(f"Starting the law document Pinecone indexing.{' (TEST MODE - 10 records)' if test_mode else ''}")
+    logging.info(f"Starting the {document_type_choice} document Pinecone indexing.{' (TEST MODE - 10 records)' if test_mode else ''}")
     
     # Directory containing the JSON files and checkpoint file
-    checkpoint_path = os.path.join(LOG_DIR, "pinecone_law_checkpoint.txt")  # Store checkpoint in log directory
+    checkpoint_filename = f"pinecone_{document_type_choice}_checkpoint.txt"
+    checkpoint_path = os.path.join(LOG_DIR, checkpoint_filename)  # Store checkpoint in log directory
     processed_files = []  # Track successfully processed files
     failed_files = []     # Track failed files
     time_per_file = {}    # Track processing time for each file
@@ -247,36 +272,49 @@ def main():
             # We also have a 'metadata' object that may contain "source_file", "full_reference", "url", etc.
             meta = data.get("metadata", {})
 
-            # Distinguish if this JSON is legislation or ATO ruling
-            section = data.get("section")  # Legislation typically has "section"
-            title   = data.get("title")    # ATO rulings may have "title"
-            # The ATO's JSON might also have a top-level "url" (or in metadata)
-
-            # Decide source
-            if section and section.lower() != "no section provided":
-                source = "legislation"
+            # Set source based on user's document type choice, but verify if file matches
+            file_document_type = data.get("document_type", "")
+            
+            # Use the user's choice as the primary source
+            source = document_type_choice
+            
+            # For ATO documents
+            if document_type_choice == "ato":
+                # Verify if file doesn't look like an ATO document
+                if file_document_type and file_document_type != "ato":
+                    logging.warning(f"File {file_name} has document_type={file_document_type}, but is in ATO directory")
+                
+                # Use doc_id as vector_id
+                vector_id = data.get("doc_id", "")
+                if not vector_id:
+                    logging.warning(f"ATO document {file_name} missing doc_id, using filename as fallback")
+                    vector_id = file_name
+                
+                # No section for ATO documents
+                section = ""
             else:
-                source = "ato_ruling"
+                # For legislation documents
+                if file_document_type == "ato":
+                    logging.warning(f"File {file_name} has document_type=ato, but is in legislation directory")
+                
+                # Use section for legislation
+                section = data.get("section", "")
+                vector_id = section if section and section.lower() != "no section provided" else file_name
+            
+            # Always grab title for metadata
+            title = data.get("title", "")
+            
+            # URL handling - can be at top level or in metadata
+            url = data.get("url") or meta.get("url", "")
 
-            # If the ATO JSON has a top-level 'url', or meta-level 'url', fetch it
-            # We'll store it in metadata only if source == "ato_ruling"
-            # Or you can store it for both, but presumably, legislation doesn't have one
-            url = data.get("url") or meta.get("url")
-
-            # ID for Pinecone: section if legislation, else title or fallback to file name
-            if source == "legislation":
-                vector_id = section if section else file_name
-            else:
-                vector_id = title if title else file_name
-
-            # Sanitize the vector ID
+            # Sanitize the vector ID - remove spaces and special characters
             vector_id = vector_id.replace(" ", "_").encode("ascii", "ignore").decode()
 
             # Build metadata template (without the actual text content yet)
             pinecone_metadata_template = {
                 "source": source,  
                 "section": section if source == "legislation" else "",
-                "title": title if source == "ato_ruling" else "",
+                "title": title,
                 # chunk_text will be added later
                 "source_file": meta.get("source_file", ""),
                 "full_reference": meta.get("full_reference", ""),
@@ -290,11 +328,11 @@ def main():
             }
 
             # Only store a "url" field if it's an ATO doc that actually has a URL
-            if source == "ato_ruling":
-                pinecone_metadata_template["url"] = url if url else None
+            if source == "ato" and url:
+                pinecone_metadata_template["url"] = url
 
             # Determine namespace
-            namespace = determine_namespace(file_name, pinecone_metadata_template)
+            namespace = determine_namespace(file_name, data, document_type_choice)
 
             # Create a test metadata object with the full text to check size
             test_metadata = pinecone_metadata_template.copy()
@@ -326,7 +364,7 @@ def main():
                     embed_parts = []
                     if source == "legislation" and section:
                         embed_parts.append(section)
-                    elif source == "ato_ruling" and title:
+                    elif source == "ato" and title:
                         embed_parts.append(title)
                     # Append this chunk's text
                     embed_parts.append(chunk_text)
@@ -378,7 +416,7 @@ def main():
                 embed_parts = []
                 if source == "legislation" and section:
                     embed_parts.append(section)
-                elif source == "ato_ruling" and title:
+                elif source == "ato" and title:
                     embed_parts.append(title)
                 # Always append the chunk text
                 embed_parts.append(text_data)
@@ -488,7 +526,7 @@ def main():
 
     # Generate summary report
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_filename = f"pinecone_law_report_{timestamp}.txt"
+    report_filename = f"pinecone_{document_type_choice}_report_{timestamp}.txt"
     report_path = os.path.join(LOG_DIR, report_filename)  # Save in log directory
     with open(report_path, "w", encoding="utf-8") as report_file:
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -534,17 +572,11 @@ def truncate_to_token_limit(text, max_tokens=8000, model="text-embedding-3-large
         return text[:char_limit], max_tokens
 
 
-def determine_namespace(file_name, metadata):
-    """Determine the namespace based on file name and metadata."""
-    # Check file name for ATO prefix
-    if file_name.startswith("ATO_"):
+def determine_namespace(file_name, data, doc_type):
+    """Determine the namespace based on the document type choice."""
+    # Use 'ato' namespace for ATO documents, None for legislation
+    if doc_type == "ato":
         return "ato"
-    
-    # Check document_type field in metadata
-    if metadata.get("document_type") == "ato_ruling":
-        return "ato"
-        
-    # Default to no namespace (for legislation)
     return None
 
 
